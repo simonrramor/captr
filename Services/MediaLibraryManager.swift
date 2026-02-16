@@ -1,0 +1,132 @@
+import Foundation
+import AppKit
+import AVFoundation
+
+@MainActor
+class MediaLibraryManager: ObservableObject {
+    @Published var recordings: [MediaItem] = []
+    @Published var screenshots: [MediaItem] = []
+    @Published var allItems: [MediaItem] = []
+
+    static var baseDirectory: URL {
+        FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Screen Recorder")
+    }
+
+    static var recordingsDirectory: URL {
+        baseDirectory.appendingPathComponent("Recordings")
+    }
+
+    static var screenshotsDirectory: URL {
+        baseDirectory.appendingPathComponent("Screenshots")
+    }
+
+    func loadLibrary() async {
+        let fm = FileManager.default
+
+        try? fm.createDirectory(at: Self.recordingsDirectory, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: Self.screenshotsDirectory, withIntermediateDirectories: true)
+
+        recordings = await loadItems(from: Self.recordingsDirectory, type: .recording)
+        screenshots = await loadItems(from: Self.screenshotsDirectory, type: .screenshot)
+        allItems = (recordings + screenshots).sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func loadItems(from directory: URL, type: MediaItem.MediaType) async -> [MediaItem] {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [
+            .fileSizeKey, .creationDateKey
+        ]) else {
+            return []
+        }
+
+        var items: [MediaItem] = []
+
+        for file in files {
+            let ext = file.pathExtension.lowercased()
+            let isValidType: Bool
+            switch type {
+            case .recording:
+                isValidType = ["mp4", "mov", "m4v"].contains(ext)
+            case .screenshot:
+                isValidType = ["png", "jpg", "jpeg", "tiff"].contains(ext)
+            }
+
+            guard isValidType else { continue }
+
+            let attributes = try? fm.attributesOfItem(atPath: file.path)
+            let fileSize = (attributes?[.size] as? Int64) ?? 0
+            let createdAt = (attributes?[.creationDate] as? Date) ?? Date()
+
+            var duration: TimeInterval?
+            var thumbnail: NSImage?
+
+            if type == .recording {
+                let asset = AVURLAsset(url: file)
+                duration = try? await asset.load(.duration).seconds
+                thumbnail = await generateVideoThumbnail(for: file)
+            } else {
+                thumbnail = NSImage(contentsOf: file)
+                if let thumb = thumbnail {
+                    let maxSize: CGFloat = 200
+                    let ratio = min(maxSize / thumb.size.width, maxSize / thumb.size.height, 1.0)
+                    let newSize = NSSize(width: thumb.size.width * ratio, height: thumb.size.height * ratio)
+                    let resized = NSImage(size: newSize)
+                    resized.lockFocus()
+                    thumb.draw(in: NSRect(origin: .zero, size: newSize))
+                    resized.unlockFocus()
+                    thumbnail = resized
+                }
+            }
+
+            items.append(MediaItem(
+                id: UUID(),
+                url: file,
+                type: type,
+                createdAt: createdAt,
+                fileSize: fileSize,
+                duration: duration,
+                thumbnail: thumbnail
+            ))
+        }
+
+        return items.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func generateVideoThumbnail(for url: URL) async -> NSImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 400, height: 400)
+
+        do {
+            let (cgImage, _) = try await generator.image(at: .zero)
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        } catch {
+            return nil
+        }
+    }
+
+    func deleteItem(_ item: MediaItem) {
+        try? FileManager.default.removeItem(at: item.url)
+        recordings.removeAll { $0.id == item.id }
+        screenshots.removeAll { $0.id == item.id }
+        allItems.removeAll { $0.id == item.id }
+    }
+
+    func revealInFinder(_ item: MediaItem) {
+        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+    }
+
+    func openInDefaultApp(_ item: MediaItem) {
+        NSWorkspace.shared.open(item.url)
+    }
+
+    func addRecording(at url: URL) async {
+        await loadLibrary()
+    }
+
+    func addScreenshot(at url: URL) async {
+        await loadLibrary()
+    }
+}
