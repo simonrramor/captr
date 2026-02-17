@@ -6,18 +6,21 @@ import SwiftUI
 class AndroidFrameGrabber: @unchecked Sendable {
     private let adbPath: String
     private let serial: String
-    private var isRunning = false
+    private let lock = NSLock()
+    private var _isRunning = false
 
-    var onFrame: ((NSImage) -> Void)?
+    private var isRunning: Bool {
+        get { lock.withLock { _isRunning } }
+        set { lock.withLock { _isRunning = newValue } }
+    }
+
+    // Delivers raw PNG data; image creation must happen on the main thread
+    var onFrameData: ((Data) -> Void)?
 
     init(adbPath: String, serial: String) {
         self.adbPath = adbPath
         self.serial = serial
     }
-
-    // #region agent log
-    private var frameCount = 0
-    // #endregion
 
     func start() {
         isRunning = true
@@ -41,7 +44,6 @@ class AndroidFrameGrabber: @unchecked Sendable {
         process.standardOutput = pipe
         process.standardError = Pipe()
 
-        // Collect all data from pipe before waiting for exit
         var allData = Data()
         let fileHandle = pipe.fileHandleForReading
 
@@ -51,8 +53,7 @@ class AndroidFrameGrabber: @unchecked Sendable {
             return
         }
 
-        // Read data in chunks - must read before/during process execution
-        // to prevent pipe buffer from filling up and blocking the process
+        // Read data in chunks to prevent pipe buffer from blocking the process
         while true {
             let chunk = fileHandle.availableData
             if chunk.isEmpty { break }
@@ -61,59 +62,9 @@ class AndroidFrameGrabber: @unchecked Sendable {
 
         process.waitUntilExit()
 
-        // #region agent log
-        frameCount += 1
-        if frameCount <= 5 || frameCount % 50 == 0 {
-            let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-            let payload: [String: Any] = [
-                "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-                "location": "AndroidFrameGrabber.captureFrame",
-                "message": "Android frame capture attempt",
-                "data": ["hypothesisId": "H-D", "frameCount": frameCount,
-                         "dataSize": allData.count, "exitCode": process.terminationStatus]
-            ]
-            if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-               let jsonStr = String(data: jsonData, encoding: .utf8) {
-                let line = jsonStr + "\n"
-                if let handle = FileHandle(forWritingAtPath: logPath) {
-                    handle.seekToEndOfFile()
-                    handle.write(line.data(using: .utf8)!)
-                    handle.closeFile()
-                } else {
-                    FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-                }
-            }
-        }
-        // #endregion
-
         guard allData.count > 100 else { return }
 
-        if let image = NSImage(data: allData) {
-            // #region agent log
-            if frameCount <= 5 || frameCount % 50 == 0 {
-                let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-                let payload: [String: Any] = [
-                    "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-                    "location": "AndroidFrameGrabber.captureFrame",
-                    "message": "Android frame created NSImage",
-                    "data": ["hypothesisId": "H-D", "frameCount": frameCount,
-                             "imageWidth": image.size.width, "imageHeight": image.size.height]
-                ]
-                if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-                   let jsonStr = String(data: jsonData, encoding: .utf8) {
-                    let line = jsonStr + "\n"
-                    if let handle = FileHandle(forWritingAtPath: logPath) {
-                        handle.seekToEndOfFile()
-                        handle.write(line.data(using: .utf8)!)
-                        handle.closeFile()
-                    } else {
-                        FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-                    }
-                }
-            }
-            // #endregion
-            onFrame?(image)
-        }
+        onFrameData?(allData)
     }
 }
 
@@ -208,58 +159,15 @@ class AndroidDeviceMirror: ObservableObject {
             }
         }
 
-        // Start frame grabber
+        // Start frame grabber - create NSImage on the main thread to avoid
+        // cross-thread retain/release issues with Core Animation layers
         let grabber = AndroidFrameGrabber(adbPath: adbPath, serial: serial)
-        // #region agent log
-        do {
-            let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-            let payload: [String: Any] = [
-                "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-                "location": "AndroidDeviceMirror.startMirroring",
-                "message": "Starting frame grabber",
-                "data": ["hypothesisId": "H-E", "adbPath": adbPath, "serial": serial, "deviceName": device.name]
-            ]
-            if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-               let jsonStr = String(data: jsonData, encoding: .utf8) {
-                let line = jsonStr + "\n"
-                if let handle = FileHandle(forWritingAtPath: logPath) {
-                    handle.seekToEndOfFile()
-                    handle.write(line.data(using: .utf8)!)
-                    handle.closeFile()
-                } else {
-                    FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-                }
-            }
-        }
-        // #endregion
-        var androidFrameCallbackCount = 0
-        grabber.onFrame = { [weak self] image in
-            // #region agent log
-            androidFrameCallbackCount += 1
-            if androidFrameCallbackCount <= 3 || androidFrameCallbackCount % 50 == 0 {
-                let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-                let payload: [String: Any] = [
-                    "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-                    "location": "AndroidDeviceMirror.onFrame",
-                    "message": "Frame callback received",
-                    "data": ["hypothesisId": "H-E", "callbackCount": androidFrameCallbackCount,
-                             "imageWidth": image.size.width, "imageHeight": image.size.height]
-                ]
-                if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-                   let jsonStr = String(data: jsonData, encoding: .utf8) {
-                    let line = jsonStr + "\n"
-                    if let handle = FileHandle(forWritingAtPath: logPath) {
-                        handle.seekToEndOfFile()
-                        handle.write(line.data(using: .utf8)!)
-                        handle.closeFile()
-                    } else {
-                        FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-                    }
-                }
-            }
-            // #endregion
+        grabber.onFrameData = { [weak self] data in
             Task { @MainActor [weak self] in
-                self?.currentFrame = image
+                guard let self = self, self.isMirroring else { return }
+                if let image = NSImage(data: data) {
+                    self.currentFrame = image
+                }
             }
         }
         grabber.start()

@@ -1,163 +1,95 @@
 import Foundation
-import SwiftUI
-import AVFoundation
 import AppKit
-import CoreImage
 
-// Thread-safe buffer writer for device mirror recording
-class MirrorBufferWriter: @unchecked Sendable {
-    private let assetWriter: AVAssetWriter
-    private let videoInput: AVAssetWriterInput
-    private let audioInput: AVAssetWriterInput?
+// Persistent frame grabber using pymobiledevice3 streaming script
+class IOSFrameGrabber: @unchecked Sendable {
+    private let pythonPath: String
+    private let scriptPath: String
+    private let udid: String
     private let lock = NSLock()
-    private var sessionStarted = false
-    private var isFinished = false
+    private var _process: Process?
+    private var _isRunning = false
 
-    init(assetWriter: AVAssetWriter, videoInput: AVAssetWriterInput, audioInput: AVAssetWriterInput?) {
-        self.assetWriter = assetWriter
-        self.videoInput = videoInput
-        self.audioInput = audioInput
+    private var isRunning: Bool {
+        get { lock.withLock { _isRunning } }
+        set { lock.withLock { _isRunning = newValue } }
     }
 
-    func appendVideo(_ buffer: CMSampleBuffer) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isFinished, assetWriter.status != .failed else { return }
+    // Delivers raw PNG data; image creation must happen on the main thread
+    var onFrameData: ((Data) -> Void)?
 
-        if !sessionStarted {
-            assetWriter.startWriting()
-            assetWriter.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(buffer))
-            sessionStarted = true
-        }
-
-        guard videoInput.isReadyForMoreMediaData else { return }
-        videoInput.append(buffer)
+    init(pythonPath: String, scriptPath: String, udid: String) {
+        self.pythonPath = pythonPath
+        self.scriptPath = scriptPath
+        self.udid = udid
     }
 
-    func appendAudio(_ buffer: CMSampleBuffer) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isFinished, sessionStarted, assetWriter.status != .failed else { return }
-        guard let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
-        audioInput.append(buffer)
-    }
-
-    func finishWriting() async {
-        lock.lock()
-        guard !isFinished, sessionStarted else { lock.unlock(); return }
-        isFinished = true
-        lock.unlock()
-
-        videoInput.markAsFinished()
-        audioInput?.markAsFinished()
-
-        if assetWriter.status == .writing {
-            await assetWriter.finishWriting()
+    func start() {
+        isRunning = true
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
+            self?.runStreamingProcess()
         }
     }
 
-    func cancelWriting() {
+    func stop() {
         lock.lock()
-        isFinished = true
+        _isRunning = false
+        let proc = _process
+        _process = nil
         lock.unlock()
-        assetWriter.cancelWriting()
-    }
-}
-
-// Capture delegate running on the background capture queue
-class MirrorCaptureHandler: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
-    private var bufferWriter: MirrorBufferWriter?
-    private var recording = false
-    private let lock = NSLock()
-    private var latestCGImage: CGImage?
-    private let ciContext = CIContext()
-    private var dimensionsCallback: ((CGSize) -> Void)?
-    private var hasSentDimensions = false
-    // #region agent log
-    private var frameCount = 0
-    // #endregion
-
-    func setDimensionsCallback(_ callback: @escaping (CGSize) -> Void) {
-        dimensionsCallback = callback
+        proc?.terminate()
     }
 
-    func startRecording(writer: MirrorBufferWriter) {
-        lock.lock()
-        bufferWriter = writer
-        recording = true
-        lock.unlock()
-    }
+    private func runStreamingProcess() {
+        while isRunning {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: pythonPath)
+            proc.arguments = [scriptPath, udid]
 
-    func stopRecording() {
-        lock.lock()
-        recording = false
-        bufferWriter = nil
-        lock.unlock()
-    }
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = FileHandle.nullDevice
 
-    func getLatestFrame() -> NSImage? {
-        lock.lock()
-        let img = latestCGImage
-        lock.unlock()
-        guard let cg = img else { return nil }
-        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-    }
+            do {
+                try proc.run()
+            } catch {
+                Thread.sleep(forTimeInterval: 1.0)
+                continue
+            }
 
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard sampleBuffer.isValid else { return }
+            lock.withLock { _process = proc }
+            let fileHandle = pipe.fileHandleForReading
 
-        // #region agent log
-        frameCount += 1
-        if frameCount <= 3 || frameCount % 100 == 0 {
-            let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-            let hasImageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) != nil
-            let payload: [String: Any] = [
-                "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-                "location": "MirrorCaptureHandler.captureOutput",
-                "message": "iOS frame received",
-                "data": ["hypothesisId": "H-A", "frameCount": frameCount, "hasImageBuffer": hasImageBuffer,
-                         "isValid": sampleBuffer.isValid]
-            ]
-            if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-               let jsonStr = String(data: jsonData, encoding: .utf8) {
-                let line = jsonStr + "\n"
-                if let handle = FileHandle(forWritingAtPath: logPath) {
-                    handle.seekToEndOfFile()
-                    handle.write(line.data(using: .utf8)!)
-                    handle.closeFile()
-                } else {
-                    FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-                }
+            // Read length-prefixed PNG frames: [4 bytes big-endian length][PNG data]
+            while isRunning && proc.isRunning {
+                guard let lengthData = readExactly(from: fileHandle, count: 4) else { break }
+
+                let length = lengthData.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+                guard length > 0 && length < 50_000_000 else { break }
+
+                guard let pngData = readExactly(from: fileHandle, count: Int(length)) else { break }
+
+                onFrameData?(pngData)
+            }
+
+            proc.terminate()
+            proc.waitUntilExit()
+            lock.withLock { _process = nil }
+
+            if isRunning {
+                Thread.sleep(forTimeInterval: 1.0)
             }
         }
-        // #endregion
+    }
 
-        lock.lock()
-        let isRecording = recording
-        let writer = bufferWriter
-        lock.unlock()
-
-        if isRecording {
-            writer?.appendVideo(sampleBuffer)
+    private func readExactly(from handle: FileHandle, count: Int) -> Data? {
+        var data = Data()
+        while data.count < count {
+            let chunk = handle.readData(ofLength: count - data.count)
+            if chunk.isEmpty { return nil }
+            data.append(chunk)
         }
-
-        // Store latest frame for screenshots
-        if let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            let ciImage = CIImage(cvImageBuffer: imageBuffer)
-            if let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) {
-                lock.lock()
-                latestCGImage = cgImage
-                lock.unlock()
-            }
-        }
-
-        // Report video dimensions once
-        if !hasSentDimensions, let formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer) {
-            let dims = CMVideoFormatDescriptionGetDimensions(formatDesc)
-            hasSentDimensions = true
-            let size = CGSize(width: CGFloat(dims.width), height: CGFloat(dims.height))
-            dimensionsCallback?(size)
-        }
+        return data
     }
 }
 
@@ -167,205 +99,165 @@ class IOSDeviceMirror: ObservableObject {
     @Published var isRecording = false
     @Published var recordingDuration: TimeInterval = 0
     @Published var errorMessage: String?
-    @Published var videoDimensions: CGSize = .zero
+    @Published var deviceResolution: CGSize = .zero
     @Published var mirroringDeviceName: String = ""
+    @Published var currentFrame: NSImage?
 
-    private(set) var captureSession: AVCaptureSession?
-    private var captureHandler: MirrorCaptureHandler?
-    private var bufferWriter: MirrorBufferWriter?
+    private var frameGrabber: IOSFrameGrabber?
     private var durationTimer: Timer?
     private var recordingStartDate: Date?
-    private var outputURL: URL?
-    private let outputQueue = DispatchQueue(label: "com.screenrecorder.ios-mirror", qos: .userInteractive)
+    private var mirroringDeviceUDID: String?
 
-    // #region agent log
-    private func debugLog(_ message: String, _ data: [String: Any] = [:]) {
-        let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-        var payload: [String: Any] = [
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "location": "IOSDeviceMirror.swift",
-            "message": message,
-            "data": data
-        ]
-        if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-           let jsonStr = String(data: jsonData, encoding: .utf8) {
-            let line = jsonStr + "\n"
-            if let handle = FileHandle(forWritingAtPath: logPath) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            } else {
-                FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-            }
+    // Paths
+    static let pythonPath = "\(NSHomeDirectory())/.pymobiledevice3-venv/bin/python3.13"
+    static let pymobiledevicePath = "\(NSHomeDirectory())/.pymobiledevice3-venv/bin/pymobiledevice3"
+    static let ideviceIdPath = "/opt/homebrew/bin/idevice_id"
+
+    // Path to streaming script (bundled in app or in source tree)
+    static var streamScriptPath: String {
+        if let bundled = Bundle.main.path(forResource: "ios_stream", ofType: "py") {
+            return bundled
         }
+        return "\(NSHomeDirectory())/ScreenRecorder/Resources/ios_stream.py"
     }
-    // #endregion
 
-    func startMirroring(device: AVCaptureDevice) {
+    static var isAvailable: Bool {
+        FileManager.default.fileExists(atPath: pythonPath) &&
+        FileManager.default.fileExists(atPath: ideviceIdPath)
+    }
+
+    func startMirroring(udid: String, deviceName: String) {
         guard !isMirroring else { return }
         errorMessage = nil
-        mirroringDeviceName = device.localizedName
+        mirroringDeviceName = deviceName
+        mirroringDeviceUDID = udid
 
-        // #region agent log
-        debugLog("startMirroring called", [
-            "hypothesisId": "H-A",
-            "deviceName": device.localizedName,
-            "deviceUniqueID": device.uniqueID,
-            "deviceModelID": device.modelID,
-            "isConnected": device.isConnected,
-            "hasMediaType": device.hasMediaType(.video)
-        ])
-        // #endregion
+        // Ensure tunneld is running (needed for iOS 17+)
+        ensureTunneld()
 
-        do {
-            let session = AVCaptureSession()
-            session.sessionPreset = .high
-
-            let input = try AVCaptureDeviceInput(device: device)
-            guard session.canAddInput(input) else {
-                // #region agent log
-                debugLog("Cannot add device input", ["hypothesisId": "H-A"])
-                // #endregion
-                errorMessage = "Cannot add device input"
-                return
-            }
-            session.addInput(input)
-
-            let handler = MirrorCaptureHandler()
-            handler.setDimensionsCallback { [weak self] size in
-                // #region agent log
-                self?.debugLog("Got video dimensions from delegate", [
-                    "hypothesisId": "H-A",
-                    "width": size.width,
-                    "height": size.height
-                ])
-                // #endregion
-                Task { @MainActor [weak self] in
-                    self?.videoDimensions = size
+        let grabber = IOSFrameGrabber(pythonPath: Self.pythonPath, scriptPath: Self.streamScriptPath, udid: udid)
+        grabber.onFrameData = { [weak self] data in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isMirroring else { return }
+                if let image = NSImage(data: data) {
+                    self.currentFrame = image
+                    if self.deviceResolution == .zero {
+                        self.deviceResolution = image.size
+                    }
                 }
             }
-
-            let videoOut = AVCaptureVideoDataOutput()
-            videoOut.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-            videoOut.alwaysDiscardsLateVideoFrames = true
-            videoOut.setSampleBufferDelegate(handler, queue: outputQueue)
-
-            guard session.canAddOutput(videoOut) else {
-                // #region agent log
-                debugLog("Cannot add video output", ["hypothesisId": "H-A"])
-                // #endregion
-                errorMessage = "Cannot add video output"
-                return
-            }
-            session.addOutput(videoOut)
-
-            captureSession = session
-            captureHandler = handler
-
-            // #region agent log
-            debugLog("About to call session.startRunning()", [
-                "hypothesisId": "H-A",
-                "sessionIsRunning": session.isRunning,
-                "inputCount": session.inputs.count,
-                "outputCount": session.outputs.count
-            ])
-            // #endregion
-
-            session.startRunning()
-
-            // #region agent log
-            debugLog("After session.startRunning()", [
-                "hypothesisId": "H-A",
-                "sessionIsRunning": session.isRunning
-            ])
-            // #endregion
-
-            isMirroring = true
-
-        } catch {
-            // #region agent log
-            debugLog("Exception in startMirroring", ["hypothesisId": "H-A", "error": error.localizedDescription])
-            // #endregion
-            errorMessage = "Failed to start mirroring: \(error.localizedDescription)"
         }
+        grabber.start()
+        frameGrabber = grabber
+        isMirroring = true
     }
 
     func stopMirroring() {
+        frameGrabber?.stop()
+        frameGrabber = nil
+
         if isRecording {
-            captureHandler?.stopRecording()
-            Task { await bufferWriter?.finishWriting() }
             isRecording = false
             stopDurationTimer()
         }
 
-        captureSession?.stopRunning()
-        captureSession = nil
-        captureHandler = nil
-        bufferWriter = nil
         isMirroring = false
-        videoDimensions = .zero
+        currentFrame = nil
         mirroringDeviceName = ""
+        mirroringDeviceUDID = nil
+        deviceResolution = .zero
+    }
+
+    func takeScreenshot() -> NSImage? {
+        return currentFrame
     }
 
     func startRecording() {
         guard isMirroring, !isRecording else { return }
-
-        do {
-            let outputDir = MediaLibraryManager.recordingsDirectory
-            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
-
-            let fileName = "iOS Device \(Date().screenRecorderFileName).mp4"
-            let url = outputDir.appendingPathComponent(fileName)
-            outputURL = url
-
-            let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-
-            let w = videoDimensions.width > 0 ? Int(videoDimensions.width) : 1080
-            let h = videoDimensions.height > 0 ? Int(videoDimensions.height) : 1920
-
-            let videoSettings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: w,
-                AVVideoHeightKey: h,
-                AVVideoCompressionPropertiesKey: [
-                    AVVideoAverageBitRateKey: 8_000_000,
-                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
-                ]
-            ]
-
-            let vInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-            vInput.expectsMediaDataInRealTime = true
-            writer.add(vInput)
-
-            let bw = MirrorBufferWriter(assetWriter: writer, videoInput: vInput, audioInput: nil)
-            bufferWriter = bw
-            captureHandler?.startRecording(writer: bw)
-
-            isRecording = true
-            recordingStartDate = Date()
-            startDurationTimer()
-
-        } catch {
-            errorMessage = "Failed to start recording: \(error.localizedDescription)"
-        }
+        isRecording = true
+        recordingStartDate = Date()
+        startDurationTimer()
+        // Note: Video recording from screenshots is not supported for iOS mirroring.
+        // Screenshots can be taken individually.
     }
 
     func stopRecording() async -> URL? {
         guard isRecording else { return nil }
         isRecording = false
         stopDurationTimer()
-
-        captureHandler?.stopRecording()
-        await bufferWriter?.finishWriting()
-        bufferWriter = nil
-
-        let url = outputURL
-        outputURL = nil
-        return url
+        return nil
     }
 
-    func takeScreenshot() -> NSImage? {
-        return captureHandler?.getLatestFrame()
+    // MARK: - Tunneld Management
+
+    private func ensureTunneld() {
+        // Check if tunneld is already running
+        let checkProcess = Process()
+        checkProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        checkProcess.arguments = ["-f", "pymobiledevice3 remote tunneld"]
+        let pipe = Pipe()
+        checkProcess.standardOutput = pipe
+        checkProcess.standardError = Pipe()
+        try? checkProcess.run()
+        checkProcess.waitUntilExit()
+
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return // tunneld already running
+        }
+
+        // Start tunneld via osascript with admin privileges
+        let script = "do shell script \"\(Self.pymobiledevicePath.replacingOccurrences(of: "\"", with: "\\\"")) remote tunneld -d\" with administrator privileges"
+        let osaProcess = Process()
+        osaProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        osaProcess.arguments = ["-e", script]
+        osaProcess.standardOutput = Pipe()
+        osaProcess.standardError = Pipe()
+        try? osaProcess.run()
+        osaProcess.waitUntilExit()
+
+        // Give tunneld a moment to start
+        Thread.sleep(forTimeInterval: 2.0)
+    }
+
+    // MARK: - Device Discovery
+
+    static func listDevices() -> [(udid: String, name: String)] {
+        guard FileManager.default.fileExists(atPath: ideviceIdPath) else { return [] }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ideviceIdPath)
+        process.arguments = ["-l"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        process.waitUntilExit()
+
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        var devices: [(udid: String, name: String)] = []
+
+        for line in output.components(separatedBy: "\n") {
+            let udid = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !udid.isEmpty else { continue }
+
+            // Get device name
+            let nameProcess = Process()
+            nameProcess.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/ideviceinfo")
+            nameProcess.arguments = ["-u", udid, "-k", "DeviceName"]
+            let namePipe = Pipe()
+            nameProcess.standardOutput = namePipe
+            nameProcess.standardError = Pipe()
+            try? nameProcess.run()
+            nameProcess.waitUntilExit()
+
+            let name = String(data: namePipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "iOS Device"
+
+            devices.append((udid: udid, name: name.isEmpty ? "iOS Device" : name))
+        }
+
+        return devices
     }
 
     private func startDurationTimer() {
@@ -382,83 +274,5 @@ class IOSDeviceMirror: ObservableObject {
         durationTimer = nil
         recordingDuration = 0
         recordingStartDate = nil
-    }
-}
-
-// SwiftUI wrapper for AVCaptureVideoPreviewLayer
-struct IOSDevicePreviewView: NSViewRepresentable {
-    let session: AVCaptureSession
-
-    class PreviewNSView: NSView {
-        override func makeBackingLayer() -> CALayer {
-            let layer = AVCaptureVideoPreviewLayer()
-            layer.videoGravity = .resizeAspect
-            layer.backgroundColor = NSColor.black.cgColor
-            return layer
-        }
-
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            wantsLayer = true
-        }
-
-        required init?(coder: NSCoder) { fatalError() }
-
-        var previewLayer: AVCaptureVideoPreviewLayer? {
-            layer as? AVCaptureVideoPreviewLayer
-        }
-    }
-
-    func makeNSView(context: Context) -> PreviewNSView {
-        let view = PreviewNSView(frame: .zero)
-        view.previewLayer?.session = session
-        // #region agent log
-        let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-        let payload: [String: Any] = [
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "location": "IOSDevicePreviewView.makeNSView",
-            "message": "Preview NSView created",
-            "data": ["hypothesisId": "H-B", "hasPreviewLayer": view.previewLayer != nil,
-                     "sessionIsRunning": session.isRunning, "viewFrame": "\(view.frame)"]
-        ]
-        if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-           let jsonStr = String(data: jsonData, encoding: .utf8) {
-            let line = jsonStr + "\n"
-            if let handle = FileHandle(forWritingAtPath: logPath) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            } else {
-                FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-            }
-        }
-        // #endregion
-        return view
-    }
-
-    func updateNSView(_ nsView: PreviewNSView, context: Context) {
-        nsView.previewLayer?.session = session
-        // #region agent log
-        let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-        let payload: [String: Any] = [
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "location": "IOSDevicePreviewView.updateNSView",
-            "message": "Preview NSView updated",
-            "data": ["hypothesisId": "H-B", "hasPreviewLayer": nsView.previewLayer != nil,
-                     "viewBounds": "\(nsView.bounds)", "layerBounds": "\(nsView.previewLayer?.bounds ?? .zero)",
-                     "layerFrame": "\(nsView.previewLayer?.frame ?? .zero)"]
-        ]
-        if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-           let jsonStr = String(data: jsonData, encoding: .utf8) {
-            let line = jsonStr + "\n"
-            if let handle = FileHandle(forWritingAtPath: logPath) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            } else {
-                FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-            }
-        }
-        // #endregion
     }
 }

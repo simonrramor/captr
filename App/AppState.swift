@@ -15,7 +15,9 @@ class AppState: ObservableObject {
     @Published var deviceManager = DeviceManager()
     @Published var iosDeviceMirror = IOSDeviceMirror()
     @Published var androidDeviceMirror: AndroidDeviceMirror?
-    var mirrorWindow = DeviceMirrorWindow()
+    var iosMirrorWindow = DeviceMirrorWindow()
+    var androidMirrorWindow = DeviceMirrorWindow()
+    private var deviceManagerCancellable: AnyCancellable?
 
     @Published var selectedSidebarItem: SidebarItem = .home
     @Published var selectedMediaItem: MediaItem?
@@ -70,6 +72,11 @@ class AppState: ObservableObject {
         await mediaLibrary.loadLibrary()
         deviceManager.startMonitoring()
         setupAndroidMirror()
+
+        // Forward deviceManager changes to trigger SwiftUI updates on this object
+        deviceManagerCancellable = deviceManager.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     private func setupAndroidMirror() {
@@ -83,14 +90,22 @@ class AppState: ObservableObject {
     func startDeviceMirroring(device: ConnectedDevice) async {
         switch device.platform {
         case .iOS:
-            guard let captureDevice = device.captureDevice else {
-                showErrorNotification("iOS device not available for capture")
+            guard let udid = device.iosUDID else {
+                showErrorNotification("iOS device not available")
                 return
             }
-            iosDeviceMirror.startMirroring(device: captureDevice)
-            // Open mirror in a new window
-            if let session = iosDeviceMirror.captureSession {
-                mirrorWindow.openIOSMirrorWindow(session: session, deviceName: device.name, mirror: iosDeviceMirror, appState: self)
+            // If already mirroring, just reopen the window
+            if iosDeviceMirror.isMirroring {
+                iosMirrorWindow.openIOSMirrorWindow(mirror: iosDeviceMirror, deviceName: device.name, appState: self)
+                return
+            }
+            iosDeviceMirror.startMirroring(udid: udid, deviceName: device.name)
+            if iosDeviceMirror.isMirroring {
+                iosMirrorWindow.openIOSMirrorWindow(mirror: iosDeviceMirror, deviceName: device.name, appState: self)
+            } else if let error = iosDeviceMirror.errorMessage {
+                showErrorNotification(error)
+            } else {
+                showErrorNotification("Failed to start iOS mirroring")
             }
 
         case .android:
@@ -104,25 +119,20 @@ class AppState: ObservableObject {
                 return
             }
             mirror.startMirroring(device: device)
-            // Open mirror in a new window
-            mirrorWindow.openAndroidMirrorWindow(mirror: mirror, appState: self)
+            androidMirrorWindow.openAndroidMirrorWindow(mirror: mirror, appState: self)
         }
     }
 
     func startDeviceMirroringWithRecording(device: ConnectedDevice) async {
         switch device.platform {
         case .iOS:
-            guard let captureDevice = device.captureDevice else {
-                showErrorNotification("iOS device not available for capture")
+            guard let udid = device.iosUDID else {
+                showErrorNotification("iOS device not available")
                 return
             }
-            iosDeviceMirror.startMirroring(device: captureDevice)
-            Task {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                iosDeviceMirror.startRecording()
-            }
-            if let session = iosDeviceMirror.captureSession {
-                mirrorWindow.openIOSMirrorWindow(session: session, deviceName: device.name, mirror: iosDeviceMirror, appState: self)
+            iosDeviceMirror.startMirroring(udid: udid, deviceName: device.name)
+            if iosDeviceMirror.isMirroring {
+                iosMirrorWindow.openIOSMirrorWindow(mirror: iosDeviceMirror, deviceName: device.name, appState: self)
             }
 
         case .android:
@@ -135,7 +145,7 @@ class AppState: ObservableObject {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 mirror.startRecording()
             }
-            mirrorWindow.openAndroidMirrorWindow(mirror: mirror, appState: self)
+            androidMirrorWindow.openAndroidMirrorWindow(mirror: mirror, appState: self)
         }
     }
 
@@ -144,21 +154,15 @@ class AppState: ObservableObject {
         case .iOS:
             if iosDeviceMirror.isMirroring {
                 if let image = iosDeviceMirror.takeScreenshot() {
-                    presentAnnotationEditor(with: image)
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.writeObjects([image])
+                    showSaveNotification("Device screenshot copied to clipboard")
                 } else {
                     showErrorNotification("Failed to capture screenshot from iOS device")
                 }
             } else {
-                guard let captureDevice = device.captureDevice else {
-                    showErrorNotification("iOS device not available")
-                    return
-                }
-                iosDeviceMirror.startMirroring(device: captureDevice)
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                if let image = iosDeviceMirror.takeScreenshot() {
-                    presentAnnotationEditor(with: image)
-                }
-                iosDeviceMirror.stopMirroring()
+                showErrorNotification("Start mirroring first to take a screenshot")
             }
 
         case .android:
@@ -228,6 +232,11 @@ class AppState: ObservableObject {
 
         if let action = pendingCaptureAction {
             pendingCaptureAction = nil
+
+            // Brief delay to let the overlay window fully disappear from the screen
+            // before capturing, so it doesn't appear in the screenshot
+            try? await Task.sleep(nanoseconds: 200_000_000)
+
             switch action {
             case .recording:
                 configuration.mode = .area

@@ -102,6 +102,8 @@ struct ContentView: View {
 
 struct SidebarView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showSettings = false
+    @State private var showShortcuts = false
 
     var body: some View {
         List(selection: $appState.selectedSidebarItem) {
@@ -148,69 +150,154 @@ struct SidebarView: View {
                 }
             }
 
-            Section("Quick Actions") {
+            Section {
                 Button {
-                    Task { await appState.startRecording(mode: .fullScreen) }
+                    showShortcuts = true
                 } label: {
-                    Label("Record Screen", systemImage: "record.circle")
+                    Label("Shortcuts", systemImage: "keyboard")
                 }
-                .disabled(appState.captureEngine.state.isActive)
+                .buttonStyle(.plain)
 
                 Button {
-                    Task { await appState.takeFullScreenScreenshot() }
+                    showSettings = true
                 } label: {
-                    Label("Take Screenshot", systemImage: "camera")
+                    Label("Settings", systemImage: "gear")
                 }
+                .buttonStyle(.plain)
             }
+        }
+        .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
+        .sheet(isPresented: $showSettings) {
+            SettingsPopup()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showShortcuts) {
+            ShortcutsPopup()
+                .environmentObject(appState)
+        }
+    }
+}
 
-            Section("Shortcuts") {
+// MARK: - Shortcuts Popup
+
+struct ShortcutsPopup: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Keyboard Shortcuts")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            Form {
                 ForEach(ShortcutAction.allCases) { action in
                     ShortcutRow(
                         action: action,
                         shortcutSettings: appState.shortcutSettings
                     )
                 }
+            }
+            .formStyle(.grouped)
 
+            Divider()
+
+            HStack {
                 Button("Reset to Defaults") {
                     appState.shortcutSettings.resetToDefaults()
                 }
                 .font(.caption)
-                .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button("Done") {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
             }
-
-            Section("Settings") {
-                Toggle(isOn: Binding(
-                    get: { appState.configuration.captureSystemAudio },
-                    set: { appState.configuration.captureSystemAudio = $0 }
-                )) {
-                    Label("System Audio", systemImage: "speaker.wave.2")
-                }
-
-                Toggle(isOn: Binding(
-                    get: { appState.configuration.captureMicrophone },
-                    set: { appState.configuration.captureMicrophone = $0 }
-                )) {
-                    Label("Microphone", systemImage: "mic")
-                }
-
-                Toggle(isOn: Binding(
-                    get: { appState.configuration.showCursor },
-                    set: { appState.configuration.showCursor = $0 }
-                )) {
-                    Label("Show Cursor", systemImage: "cursorarrow")
-                }
-
-                Picker("Frame Rate", selection: Binding(
-                    get: { appState.configuration.frameRate },
-                    set: { appState.configuration.frameRate = $0 }
-                )) {
-                    Text("30 fps").tag(30)
-                    Text("60 fps").tag(60)
-                }
-            }
+            .padding()
         }
-        .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 320)
+        .frame(width: 400, height: 350)
+    }
+}
+
+// MARK: - Settings Popup
+
+struct SettingsPopup: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Settings")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            Form {
+                Section("Recording") {
+                    Toggle(isOn: Binding(
+                        get: { appState.configuration.captureSystemAudio },
+                        set: { appState.configuration.captureSystemAudio = $0 }
+                    )) {
+                        Label("System Audio", systemImage: "speaker.wave.2")
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { appState.configuration.captureMicrophone },
+                        set: { appState.configuration.captureMicrophone = $0 }
+                    )) {
+                        Label("Microphone", systemImage: "mic")
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { appState.configuration.showCursor },
+                        set: { appState.configuration.showCursor = $0 }
+                    )) {
+                        Label("Show Cursor", systemImage: "cursorarrow")
+                    }
+
+                    Picker(selection: Binding(
+                        get: { appState.configuration.frameRate },
+                        set: { appState.configuration.frameRate = $0 }
+                    )) {
+                        Text("30 fps").tag(30)
+                        Text("60 fps").tag(60)
+                    } label: {
+                        Label("Frame Rate", systemImage: "speedometer")
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+        }
+        .frame(width: 380, height: 320)
     }
 }
 

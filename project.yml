@@ -21,6 +21,7 @@ targets:
           - "Resources/Assets.xcassets/AppIcon.appiconset"
     resources:
       - path: ScreenRecorder/Resources/Assets.xcassets
+      - path: ScreenRecorder/Resources/ios_stream.py
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.screenrecorder.app

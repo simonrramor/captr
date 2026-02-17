@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFoundation
 
 struct DeviceMirrorView: View {
     @EnvironmentObject var appState: AppState
@@ -28,17 +27,18 @@ struct DeviceMirrorView: View {
     private func disconnectDevice(_ device: ConnectedDevice) {
         if device.platform == .iOS {
             appState.iosDeviceMirror.stopMirroring()
+            appState.iosMirrorWindow.closeWindow()
         } else if device.platform == .android {
             appState.androidDeviceMirror?.stopMirroring()
+            appState.androidMirrorWindow.closeWindow()
         }
-        appState.mirrorWindow.closeWindow()
     }
 
     private func openMirrorWindow(for device: ConnectedDevice) {
-        if device.platform == .iOS, let session = appState.iosDeviceMirror.captureSession {
-            appState.mirrorWindow.openIOSMirrorWindow(session: session, deviceName: device.name, mirror: appState.iosDeviceMirror, appState: appState)
+        if device.platform == .iOS {
+            appState.iosMirrorWindow.openIOSMirrorWindow(mirror: appState.iosDeviceMirror, deviceName: device.name, appState: appState)
         } else if device.platform == .android, let mirror = appState.androidDeviceMirror {
-            appState.mirrorWindow.openAndroidMirrorWindow(mirror: mirror, appState: appState)
+            appState.androidMirrorWindow.openAndroidMirrorWindow(mirror: mirror, appState: appState)
         }
     }
 

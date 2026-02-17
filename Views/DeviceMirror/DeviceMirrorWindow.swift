@@ -1,45 +1,50 @@
 import AppKit
-import AVFoundation
 import SwiftUI
 
 @MainActor
 class DeviceMirrorWindow {
     private var window: NSWindow?
-    private var displayTimer: Timer?
+    private var imageViewRef: NSImageView?
     private var iosMirror: IOSDeviceMirror?
     private var androidMirror: AndroidDeviceMirror?
     private weak var appState: AppState?
+    private var isWindowOpen = false
 
     // MARK: - iOS Mirror Window
 
-    func openIOSMirrorWindow(session: AVCaptureSession, deviceName: String, mirror: IOSDeviceMirror, appState: AppState) {
-        closeWindow()
+    func openIOSMirrorWindow(mirror: IOSDeviceMirror, deviceName: String, appState: AppState) {
+        // Only close our own window if already open
+        if isWindowOpen {
+            closeWindow()
+        }
 
         self.iosMirror = mirror
         self.appState = appState
 
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspect
-        previewLayer.backgroundColor = NSColor.black.cgColor
-
-        let hostView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 700))
-        hostView.wantsLayer = true
-        hostView.layer = previewLayer
-
+        let deviceRes = mirror.deviceResolution
+        let aspect = deviceRes.width > 0 && deviceRes.height > 0 ? deviceRes.width / deviceRes.height : 9.0 / 19.5
+        let windowHeight: CGFloat = 700
+        let windowWidth: CGFloat = windowHeight * aspect
         let controlsHeight: CGFloat = 50
 
-        let controlsView = makeControlsView(width: 400, height: controlsHeight, isIOS: true)
+        let imageView = NSImageView(frame: NSRect(x: 0, y: controlsHeight, width: windowWidth, height: windowHeight))
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.wantsLayer = true
+        imageView.layer?.backgroundColor = NSColor.black.cgColor
+        imageView.autoresizingMask = [.width, .height]
+        if let frame = mirror.currentFrame {
+            imageView.image = frame
+        }
 
-        let contentHeight = 700 + controlsHeight
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: contentHeight))
+        let controlsView = makeControlsView(width: windowWidth, height: controlsHeight, isIOS: true)
 
-        hostView.frame = NSRect(x: 0, y: controlsHeight, width: 400, height: 700)
-        hostView.autoresizingMask = [.width, .height]
-        containerView.addSubview(hostView)
+        let contentHeight = windowHeight + controlsHeight
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: contentHeight))
+        containerView.addSubview(imageView)
         containerView.addSubview(controlsView)
 
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: contentHeight),
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: contentHeight),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -48,19 +53,24 @@ class DeviceMirrorWindow {
         win.contentView = containerView
         win.center()
         win.setFrameAutosaveName("IOSMirrorWindow")
+        win.minSize = NSSize(width: 200, height: 400)
+        win.animationBehavior = .none
 
         window = win
+        imageViewRef = imageView
+        isWindowOpen = true
         win.makeKeyAndOrderFront(nil)
 
-        // #region agent log
-        debugLog("iOS mirror window opened", ["sessionRunning": session.isRunning, "deviceName": deviceName])
-        // #endregion
+        startDisplayTimer(iosMirror: mirror, imageView: imageView)
     }
 
     // MARK: - Android Mirror Window
 
     func openAndroidMirrorWindow(mirror: AndroidDeviceMirror, appState: AppState) {
-        closeWindow()
+        // Only close our own window if already open
+        if isWindowOpen {
+            closeWindow()
+        }
 
         self.androidMirror = mirror
         self.appState = appState
@@ -87,7 +97,6 @@ class DeviceMirrorWindow {
         containerView.addSubview(imageView)
         containerView.addSubview(controlsView)
 
-        // Click/drag handler on image view
         let clickView = AndroidClickView(frame: NSRect(x: 0, y: controlsHeight, width: windowWidth, height: windowHeight))
         clickView.autoresizingMask = [.width, .height]
         clickView.mirror = mirror
@@ -104,32 +113,52 @@ class DeviceMirrorWindow {
         win.center()
         win.setFrameAutosaveName("AndroidMirrorWindow")
         win.minSize = NSSize(width: 200, height: 400)
+        win.animationBehavior = .none
 
         window = win
+        imageViewRef = imageView
+        isWindowOpen = true
         win.makeKeyAndOrderFront(nil)
 
-        // Start display timer to update the NSImageView from currentFrame
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak mirror, weak imageView] _ in
-            guard let mirror = mirror, let imageView = imageView else { return }
-            Task { @MainActor in
-                if let frame = mirror.currentFrame {
-                    imageView.image = frame
-                }
-            }
-        }
-
-        // #region agent log
-        debugLog("Android mirror window opened", ["deviceName": mirror.mirroringDeviceName,
-                                                    "resolution": "\(deviceRes.width)x\(deviceRes.height)"])
-        // #endregion
+        startDisplayTimer(androidMirror: mirror, imageView: imageView)
     }
 
-    func closeWindow() {
-        if let timer = displayTimer {
-            timer.invalidate()
-            displayTimer = nil
+    // MARK: - Display Timers
+
+    private func startDisplayTimer(iosMirror: IOSDeviceMirror, imageView: NSImageView) {
+        Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self, weak iosMirror, weak imageView] timer in
+            guard let self = self, self.isWindowOpen,
+                  let mirror = iosMirror, let iv = imageView else {
+                timer.invalidate()
+                return
+            }
+            if let frame = mirror.currentFrame {
+                iv.image = frame
+            }
         }
+    }
+
+    private func startDisplayTimer(androidMirror: AndroidDeviceMirror, imageView: NSImageView) {
+        Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self, weak androidMirror, weak imageView] timer in
+            guard let self = self, self.isWindowOpen,
+                  let mirror = androidMirror, let iv = imageView else {
+                timer.invalidate()
+                return
+            }
+            if let frame = mirror.currentFrame {
+                iv.image = frame
+            }
+        }
+    }
+
+    // MARK: - Window Lifecycle
+
+    func closeWindow() {
+        isWindowOpen = false
+        imageViewRef = nil
+
         if let win = window {
+            win.contentView = nil
             win.close()
             window = nil
         }
@@ -152,7 +181,6 @@ class DeviceMirrorWindow {
         var xOffset: CGFloat = 10
 
         if !isIOS {
-            // Android navigation buttons
             let backBtn = makeButton(title: "◀", x: xOffset, y: height - 38, width: 40)
             backBtn.target = self
             backBtn.action = #selector(androidNavBack(_:))
@@ -171,19 +199,16 @@ class DeviceMirrorWindow {
             controlsView.addSubview(recentsBtn)
         }
 
-        // Record button
         let recordBtn = makeButton(title: "Record", x: 10, y: 8, color: .systemRed)
         recordBtn.target = self
         recordBtn.action = #selector(recordTapped(_:))
         controlsView.addSubview(recordBtn)
 
-        // Screenshot button
         let ssBtn = makeButton(title: "Screenshot", x: 105, y: 8, color: .systemBlue)
         ssBtn.target = self
         ssBtn.action = #selector(screenshotTapped(_:))
         controlsView.addSubview(ssBtn)
 
-        // Disconnect button
         let disconnectBtn = makeButton(title: "Disconnect", x: 210, y: 8, color: .systemGray)
         disconnectBtn.target = self
         disconnectBtn.action = #selector(disconnectTapped(_:))
@@ -266,29 +291,6 @@ class DeviceMirrorWindow {
     @objc private func androidNavRecents(_ sender: NSButton) {
         androidMirror?.sendRecents()
     }
-
-    // #region agent log
-    private func debugLog(_ message: String, _ data: [String: Any] = [:]) {
-        let logPath = NSString(string: "~/Screen recorder/.cursor/debug.log").expandingTildeInPath
-        let payload: [String: Any] = [
-            "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-            "location": "DeviceMirrorWindow",
-            "message": message,
-            "data": data
-        ]
-        if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-           let jsonStr = String(data: jsonData, encoding: .utf8) {
-            let line = jsonStr + "\n"
-            if let handle = FileHandle(forWritingAtPath: logPath) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            } else {
-                FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-            }
-        }
-    }
-    // #endregion
 }
 
 // MARK: - Android Click/Drag View

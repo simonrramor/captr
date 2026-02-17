@@ -8,6 +8,7 @@ struct ConnectedDevice: Identifiable, Hashable {
     let platform: DevicePlatform
     var captureDevice: AVCaptureDevice?
     var adbSerial: String?
+    var iosUDID: String?
 
     enum DevicePlatform: String, Codable {
         case iOS = "iOS"
@@ -52,31 +53,18 @@ class DeviceManager: ObservableObject {
 
     func startMonitoring() {
         scanIOSDevices()
+
         if adbAvailable {
             scanAndroidDevices()
         }
 
-        let connected = NotificationCenter.default.addObserver(
-            forName: .AVCaptureDeviceWasConnected,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.scanIOSDevices() }
-        }
-
-        let disconnected = NotificationCenter.default.addObserver(
-            forName: .AVCaptureDeviceWasDisconnected,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.scanIOSDevices() }
-        }
-
-        deviceObservers = [connected, disconnected]
-
-        if adbAvailable {
-            scanTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.scanAndroidDevices() }
+        // Periodic rescan for both iOS and Android devices
+        scanTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.scanIOSDevices()
+                if self?.adbAvailable == true {
+                    self?.scanAndroidDevices()
+                }
             }
         }
     }
@@ -104,36 +92,68 @@ class DeviceManager: ObservableObject {
     }
 
     func scanIOSDevices() {
-        let session = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.external],
-            mediaType: .video,
-            position: .unspecified
-        )
+        guard IOSDeviceMirror.isAvailable else { return }
 
-        let iosDevices = session.devices.map { device in
-            // Clean up display name - strip "Camera" suffix from Continuity Camera labels
-            var displayName = device.localizedName
-            if displayName.hasSuffix(" Camera") {
-                displayName = String(displayName.dropLast(7))
+        let ideviceIdPath = IOSDeviceMirror.ideviceIdPath
+        Task.detached {
+            let iosDevices = DeviceManager.scanIOSDevicesSync(ideviceIdPath: ideviceIdPath)
+
+            await MainActor.run { [weak self] in
+                let android = self?.devices.filter { $0.platform == .android } ?? []
+                self?.devices = iosDevices + android
             }
+        }
+    }
 
-            return ConnectedDevice(
-                id: device.uniqueID,
-                name: displayName,
+    nonisolated private static func scanIOSDevicesSync(ideviceIdPath: String) -> [ConnectedDevice] {
+        guard FileManager.default.fileExists(atPath: ideviceIdPath) else { return [] }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ideviceIdPath)
+        process.arguments = ["-l"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        process.waitUntilExit()
+
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        var devices: [ConnectedDevice] = []
+
+        for line in output.components(separatedBy: "\n") {
+            let udid = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !udid.isEmpty else { continue }
+
+            // Get device name
+            let nameProcess = Process()
+            nameProcess.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/ideviceinfo")
+            nameProcess.arguments = ["-u", udid, "-k", "DeviceName"]
+            let namePipe = Pipe()
+            nameProcess.standardOutput = namePipe
+            nameProcess.standardError = Pipe()
+            try? nameProcess.run()
+            nameProcess.waitUntilExit()
+
+            let name = String(data: namePipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "iOS Device"
+
+            devices.append(ConnectedDevice(
+                id: udid,
+                name: name.isEmpty ? "iOS Device" : name,
                 platform: .iOS,
-                captureDevice: device
-            )
+                iosUDID: udid
+            ))
         }
 
-        let android = devices.filter { $0.platform == .android }
-        devices = iosDevices + android
+        return devices
     }
 
     func scanAndroidDevices() {
         guard let adbPath = adbPath else { return }
 
+        let path = adbPath
         Task.detached {
-            let output = DeviceManager.runCommand(adbPath, arguments: ["devices", "-l"])
+            let output = DeviceManager.runCommand(path, arguments: ["devices", "-l"])
             var androidDevices: [ConnectedDevice] = []
 
             for line in output.components(separatedBy: "\n") {
