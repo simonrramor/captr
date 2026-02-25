@@ -23,6 +23,14 @@ class AppState: ObservableObject {
     @Published var selectedMediaItem: MediaItem?
     @Published var pendingCaptureAction: CaptureType?
 
+    // Screenshot UI state
+    @Published var screenshotMode: CaptureMode = .fullScreen
+    @Published var copyToClipboard: Bool = true
+    @Published var screenshotTimerSeconds: Int = 0
+    @Published var screenshotTimerRunning: Bool = false
+    @Published var screenshotTimerRemaining: Int = 0
+    private var screenshotTimerTask: Task<Void, Never>?
+
     @Published var showAnnotationEditor: Bool = false
     @Published var annotationImage: NSImage?
     @Published var annotationState = AnnotationState()
@@ -34,6 +42,7 @@ class AppState: ObservableObject {
     @Published var notificationMessage: String = ""
     @Published var notificationIsError: Bool = false
     @Published var isRecordingShortcut: Bool = false
+    @Published var showSettingsPopover: Bool = false
 
     private let areaSelectionController = AreaSelectionWindowController()
 
@@ -379,6 +388,68 @@ class AppState: ObservableObject {
         } else {
             showErrorNotification(textCaptureService.errorMessage ?? "No text found in the selected area")
         }
+    }
+
+    // MARK: - Screenshot Timer
+
+    func startScreenshotTimer() {
+        guard screenshotTimerSeconds > 0 else {
+            Task { await captureScreenshot() }
+            return
+        }
+        screenshotTimerRemaining = screenshotTimerSeconds
+        screenshotTimerRunning = true
+        screenshotTimerTask = Task {
+            while screenshotTimerRemaining > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                screenshotTimerRemaining -= 1
+            }
+            screenshotTimerRunning = false
+            await captureScreenshot()
+        }
+    }
+
+    func resetScreenshotTimer() {
+        screenshotTimerTask?.cancel()
+        screenshotTimerTask = nil
+        screenshotTimerRunning = false
+        screenshotTimerRemaining = 0
+    }
+
+    func captureScreenshot() async {
+        guard await ensureReadyForCapture() else { return }
+
+        switch screenshotMode {
+        case .fullScreen:
+            let display = configuration.selectedDisplay ?? captureEngine.availableDisplays.first
+            if let image = await screenshotService.captureFullScreen(display: display) {
+                copyImageToClipboard(image)
+            } else if let error = screenshotService.errorMessage {
+                showErrorNotification(error)
+            }
+        case .window:
+            await captureEngine.refreshAvailableContent()
+            if let window = captureEngine.availableWindows.first(where: { $0.isOnScreen && $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }) {
+                if let image = await screenshotService.captureWindow(window) {
+                    copyImageToClipboard(image)
+                } else if let error = screenshotService.errorMessage {
+                    showErrorNotification(error)
+                }
+            } else {
+                showErrorNotification("No window found to capture")
+            }
+        case .area:
+            pendingCaptureAction = .screenshot
+            showAreaSelection()
+        }
+    }
+
+    private func copyImageToClipboard(_ image: NSImage) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+        showSaveNotification("Screenshot copied to clipboard")
     }
 
     // MARK: - Notifications

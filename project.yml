@@ -16,18 +16,25 @@ targets:
     type: application
     platform: macOS
     sources:
-      - path: ScreenRecorder
+      - path: .
         excludes:
           - "Resources/Assets.xcassets/AppIcon.appiconset"
+          - "*.xcodeproj"
+          - ".git"
+          - ".gitignore"
+          - ".claude"
+          - "project.yml"
+          - "DerivedData"
+          - "build"
     resources:
-      - path: ScreenRecorder/Resources/Assets.xcassets
-      - path: ScreenRecorder/Resources/ios_stream.py
+      - path: Resources/Assets.xcassets
+      - path: Resources/ios_stream.py
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.screenrecorder.app
         PRODUCT_NAME: Screenshot
-        INFOPLIST_FILE: ScreenRecorder/Info.plist
-        CODE_SIGN_ENTITLEMENTS: ScreenRecorder/ScreenRecorder.entitlements
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_ENTITLEMENTS: ScreenRecorder.entitlements
         ENABLE_HARDENED_RUNTIME: true
         COMBINE_HIDPI_IMAGES: true
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -35,4 +42,4 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: PBU727Q3RR
     entitlements:
-      path: ScreenRecorder/ScreenRecorder.entitlements
+      path: ScreenRecorder.entitlements

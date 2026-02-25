@@ -9,7 +9,6 @@ struct ScreenRecorderApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
-                .frame(minWidth: 800, minHeight: 500)
                 .onAppear {
                     appDelegate.setupKeyboardShortcuts(appState: appState)
                     Task {
@@ -17,8 +16,9 @@ struct ScreenRecorderApp: App {
                     }
                 }
         }
-        .windowStyle(.titleBar)
-        .defaultSize(width: 1000, height: 650)
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 700, height: 52)
 
         MenuBarExtra("Screen Recorder", systemImage: appState.captureEngine.state.isActive ? "record.circle.fill" : "record.circle") {
             MenuBarView()
@@ -34,6 +34,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+
+        DispatchQueue.main.async {
+            if let window = NSApp.windows.first {
+                window.styleMask = [.borderless, .fullSizeContentView]
+                window.isMovableByWindowBackground = true
+                window.backgroundColor = .clear
+                window.hasShadow = true
+                window.invalidateShadow()
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
