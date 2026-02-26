@@ -24,7 +24,7 @@ class AppState: ObservableObject {
     @Published var pendingCaptureAction: CaptureType?
 
     // Screenshot UI state
-    @Published var screenshotMode: CaptureMode = .fullScreen
+    @Published var screenshotMode: CaptureMode = .area
     @Published var copyToClipboard: Bool = true
     @Published var screenshotTimerSeconds: Int = 0
     @Published var screenshotTimerRunning: Bool = false
@@ -304,13 +304,14 @@ class AppState: ObservableObject {
     }
 
     func takeScreenshot(mode: CaptureMode) async {
-        guard await ensureReadyForCapture() else { return }
         switch mode {
         case .fullScreen:
+            guard await ensureReadyForCapture() else { return }
             await takeFullScreenScreenshot()
         case .window:
             break
         case .area:
+            // Show area selection immediately - no need to wait for display refresh
             pendingCaptureAction = .screenshot
             showAreaSelection()
         }
@@ -422,10 +423,9 @@ class AppState: ObservableObject {
     }
 
     func captureScreenshot() async {
-        guard await ensureReadyForCapture() else { return }
-
         switch screenshotMode {
         case .fullScreen:
+            guard await ensureReadyForCapture() else { return }
             let display = configuration.selectedDisplay ?? captureEngine.availableDisplays.first
             if let image = await screenshotService.captureFullScreen(display: display) {
                 copyImageToClipboard(image)
@@ -433,6 +433,7 @@ class AppState: ObservableObject {
                 showErrorNotification(error)
             }
         case .window:
+            guard await ensureReadyForCapture() else { return }
             if let window = captureEngine.availableWindows.first(where: { $0.isOnScreen && $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }) {
                 if let image = await screenshotService.captureWindow(window) {
                     copyImageToClipboard(image)
@@ -443,6 +444,7 @@ class AppState: ObservableObject {
                 showErrorNotification("No window found to capture")
             }
         case .area:
+            // Show area selection immediately - no need to wait for display refresh
             pendingCaptureAction = .screenshot
             showAreaSelection()
         }
