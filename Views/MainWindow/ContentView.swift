@@ -93,6 +93,38 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
 
+            // Record button
+            Button {
+                Task {
+                    if appState.captureEngine.state.isActive {
+                        await appState.stopRecording()
+                    } else {
+                        await appState.startRecording(mode: appState.screenshotMode)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 10, height: 10)
+                        .overlay(
+                            appState.captureEngine.state.isActive
+                                ? AnyView(RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 6, height: 6))
+                                : AnyView(EmptyView())
+                        )
+                    Text(appState.captureEngine.state.isActive ? "Stop" : "Record")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(appState.captureEngine.state.isActive ? Color.red.opacity(0.35) : Color(nsColor: NSColor(white: 0.20, alpha: 1.0)))
+                )
+            }
+            .buttonStyle(.plain)
+
             // Settings gear
             Button {
                 appState.showSettingsPopover = true
@@ -189,6 +221,8 @@ struct SettingsPopup: View {
             .scrollContentBackground(.hidden)
         }
         .frame(width: 380, height: 500)
+        .background(Color(nsColor: NSColor(white: 0.15, alpha: 1.0)))
+        .preferredColorScheme(.dark)
     }
 }
 
