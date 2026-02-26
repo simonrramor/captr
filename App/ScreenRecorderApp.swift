@@ -54,7 +54,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupKeyboardShortcuts(appState: AppState) {
         guard !hasSetupShortcuts else { return }
         hasSetupShortcuts = true
-        keyboardShortcutManager = KeyboardShortcutManager(appState: appState)
+        let manager = KeyboardShortcutManager(appState: appState)
+        keyboardShortcutManager = manager
+        appState.keyboardShortcutManager = manager
         keyboardShortcutManager?.registerShortcuts()
     }
 

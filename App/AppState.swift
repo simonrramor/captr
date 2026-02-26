@@ -45,6 +45,16 @@ class AppState: ObservableObject {
     @Published var showSettingsPopover: Bool = false
 
     private let areaSelectionController = AreaSelectionWindowController()
+    private let recordingAreaOverlayController = RecordingAreaOverlayController()
+    var keyboardShortcutManager: KeyboardShortcutManager?
+
+    func unregisterShortcutsTemporarily() {
+        keyboardShortcutManager?.unregisterShortcuts()
+    }
+
+    func reregisterShortcuts() {
+        keyboardShortcutManager?.registerShortcuts()
+    }
 
     var configuration: CaptureConfiguration {
         get { captureEngine.configuration }
@@ -244,11 +254,12 @@ class AppState: ObservableObject {
 
             // Brief delay to let the overlay window fully disappear from the screen
             // before capturing, so it doesn't appear in the screenshot
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: 50_000_000)
 
             switch action {
             case .recording:
                 configuration.mode = .area
+                recordingAreaOverlayController.showOverlay(recordingRect: rect)
                 await performCountdownAndRecord()
             case .screenshot:
                 await takeAreaScreenshot(area: rect)
@@ -263,19 +274,11 @@ class AppState: ObservableObject {
     }
 
     private func performCountdownAndRecord() async {
-        showCountdown = true
-        countdownValue = 3
-
-        for i in stride(from: 3, through: 1, by: -1) {
-            countdownValue = i
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-        }
-
-        showCountdown = false
         await captureEngine.startRecording()
     }
 
     func stopRecording() async {
+        recordingAreaOverlayController.closeOverlay()
         if let url = await captureEngine.stopRecording() {
             await mediaLibrary.addRecording(at: url)
             showSaveNotification("Recording saved")
@@ -283,6 +286,7 @@ class AppState: ObservableObject {
     }
 
     func cancelRecording() async {
+        recordingAreaOverlayController.closeOverlay()
         await captureEngine.cancelRecording()
     }
 
@@ -429,7 +433,6 @@ class AppState: ObservableObject {
                 showErrorNotification(error)
             }
         case .window:
-            await captureEngine.refreshAvailableContent()
             if let window = captureEngine.availableWindows.first(where: { $0.isOnScreen && $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }) {
                 if let image = await screenshotService.captureWindow(window) {
                     copyImageToClipboard(image)

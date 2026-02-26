@@ -113,6 +113,17 @@ struct ContentView: View {
                 SettingsPopup()
                     .environmentObject(appState)
             }
+
+            // Grab handle
+            VStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 0.5)
+                        .fill(Color(nsColor: NSColor(white: 0.35, alpha: 1.0)))
+                        .frame(width: 4, height: 1)
+                }
+            }
+            .frame(width: 12, height: 16)
+            .padding(.leading, 4)
         }
     }
 }
@@ -211,15 +222,19 @@ struct ShortcutRow: View {
                 onRecord: { combo in
                     shortcutSettings.setBinding(combo, for: action)
                     appState.isRecordingShortcut = false
+                    appState.reregisterShortcuts()
                 },
                 onClear: {
                     shortcutSettings.setBinding(.empty, for: action)
+                    appState.reregisterShortcuts()
                 },
                 onStartRecording: {
                     appState.isRecordingShortcut = true
+                    appState.unregisterShortcutsTemporarily()
                 },
                 onStopRecording: {
                     appState.isRecordingShortcut = false
+                    appState.reregisterShortcuts()
                 }
             )
         }

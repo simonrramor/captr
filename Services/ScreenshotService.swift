@@ -64,32 +64,21 @@ class ScreenshotService: ObservableObject {
     }
 
     func captureArea(display: SCDisplay?, area: CGRect) async -> NSImage? {
-        guard let display = display else {
-            errorMessage = "No display available"
+        // area is already in CG coordinates (top-left origin) from convertToScreenCoordinates
+        // Use CGWindowListCreateImage which handles coordinates natively
+        guard let cgImage = CGWindowListCreateImage(
+            area,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution, .boundsIgnoreFraming]
+        ) else {
+            errorMessage = "Area screenshot failed"
             return nil
         }
 
-        do {
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-            let config = SCStreamConfiguration()
-            config.sourceRect = area
-            config.width = Int(area.width) * 2
-            config.height = Int(area.height) * 2
-            config.showsCursor = true
-            config.pixelFormat = kCVPixelFormatType_32BGRA
-
-            let image = try await SCScreenshotManager.captureImage(
-                contentFilter: filter,
-                configuration: config
-            )
-
-            let nsImage = NSImage(cgImage: image, size: NSSize(width: area.width, height: area.height))
-            lastScreenshot = nsImage
-            return nsImage
-        } catch {
-            errorMessage = "Area screenshot failed: \(error.localizedDescription)"
-            return nil
-        }
+        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: area.width, height: area.height))
+        lastScreenshot = nsImage
+        return nsImage
     }
 
     func saveScreenshot(_ image: NSImage, annotated: Bool = false) -> URL? {
