@@ -1,0 +1,26 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+    <channel>
+        <title>Captr</title>
+        <link>https://simonrramor.github.io/captr/appcast.xml</link>
+        <description>Captr updates</description>
+        <language>en</language>
+        <item>
+            <title>Version 1.1</title>
+            <description><![CDATA[
+                <ul>
+                    <li>Added automatic update support via Sparkle</li>
+                    <li>Check for Updates option in menu bar</li>
+                </ul>
+            ]]></description>
+            <pubDate>Thu, 26 Feb 2026 09:16:16 +0000</pubDate>
+            <enclosure url="https://simonrramor.github.io/captr/Captr.dmg"
+                       sparkle:version="2"
+                       sparkle:shortVersionString="1.1"
+                       sparkle:edSignature="KXUOUkTypGXSqOJXSA7HVsyIHTjpQiwBSfCMdKi0MSrwHzZqhRJCs5pwm+MM2Wi0pGc4TPbzCYFZNGzbpoFkDg=="
+                       length="1785718"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+    </channel>
+</rss>
