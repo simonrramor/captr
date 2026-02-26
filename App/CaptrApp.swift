@@ -1,9 +1,15 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct CaptrApp: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    private let updaterController: SPUStandardUpdaterController
+
+    init() {
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -21,7 +27,7 @@ struct CaptrApp: App {
         .defaultSize(width: 700, height: 52)
 
         MenuBarExtra("Captr", systemImage: appState.captureEngine.state.isActive ? "record.circle.fill" : "record.circle") {
-            MenuBarView()
+            MenuBarView(updater: updaterController.updater)
                 .environmentObject(appState)
         }
         .menuBarExtraStyle(.window)

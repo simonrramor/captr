@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.1</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
     <key>NSMainStoryboardFile</key>
@@ -36,5 +36,11 @@
     <string>Screenshot needs camera access to mirror and capture your connected iOS device screen.</string>
     <key>LSUIElement</key>
     <false/>
+    <key>SUFeedURL</key>
+    <string>https://simonrramor.github.io/captr/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>pbuRp21Ox1/jKyr32t+lLE+ayrErnO95tg4XEASszaY=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>

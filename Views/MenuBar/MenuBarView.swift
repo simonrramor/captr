@@ -1,8 +1,14 @@
 import SwiftUI
 import ScreenCaptureKit
+import Sparkle
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var checkForUpdatesViewModel: CheckForUpdatesViewModel
+
+    init(updater: SPUUpdater) {
+        self.checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: updater)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -220,6 +226,25 @@ struct MenuBarView: View {
                 }
             }
 
+            Button {
+                checkForUpdatesViewModel.checkForUpdates()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .frame(width: 16)
+                        .foregroundColor(.secondary)
+                    Text("Check for Updates…")
+                        .font(.system(size: 13))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .cornerRadius(4)
+            .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
+
             MenuBarButton(icon: "power", title: "Quit") {
                 NSApp.terminate(nil)
             }
@@ -248,5 +273,20 @@ struct MenuBarButton: View {
         }
         .buttonStyle(.plain)
         .cornerRadius(4)
+    }
+}
+
+final class CheckForUpdatesViewModel: ObservableObject {
+    @Published var canCheckForUpdates = false
+    private let updater: SPUUpdater
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        updater.publisher(for: \.canCheckForUpdates)
+            .assign(to: &$canCheckForUpdates)
+    }
+
+    func checkForUpdates() {
+        updater.checkForUpdates()
     }
 }
