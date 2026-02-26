@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ScreenRecorderApp: App {
+struct CaptrApp: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
@@ -20,7 +20,7 @@ struct ScreenRecorderApp: App {
         .windowResizability(.contentSize)
         .defaultSize(width: 700, height: 52)
 
-        MenuBarExtra("Screen Recorder", systemImage: appState.captureEngine.state.isActive ? "record.circle.fill" : "record.circle") {
+        MenuBarExtra("Captr", systemImage: appState.captureEngine.state.isActive ? "record.circle.fill" : "record.circle") {
             MenuBarView()
                 .environmentObject(appState)
         }

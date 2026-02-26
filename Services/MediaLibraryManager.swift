@@ -10,7 +10,7 @@ class MediaLibraryManager: ObservableObject {
 
     static var baseDirectory: URL {
         FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Screen Recorder")
+            .appendingPathComponent("Captr")
     }
 
     static var recordingsDirectory: URL {
