@@ -253,6 +253,288 @@ class AreaSelectionWindowController {
     }
 }
 
+// MARK: - Window Selection View (highlights windows on hover, selects on click)
+
+private struct WindowInfo {
+    let windowID: CGWindowID
+    let frame: CGRect
+    let title: String
+    let ownerName: String
+}
+
+class WindowSelectionNSView: NSView {
+    var onWindowSelected: ((CGWindowID) -> Void)?
+    var onCancelled: (() -> Void)?
+
+    private var windowInfos: [WindowInfo] = []
+    private var highlightedWindowID: CGWindowID?
+    private var overlayLayer = CALayer()
+    private var highlightLayer = CAShapeLayer()
+    private var titleLabel = CATextLayer()
+    private let screen: NSScreen
+
+    init(frame: NSRect, screen: NSScreen) {
+        self.screen = screen
+        super.init(frame: frame)
+        wantsLayer = true
+        fetchWindowInfos()
+        setupLayers()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+
+    private func fetchWindowInfos() {
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return }
+
+        for info in list {
+            guard let windowID = info[kCGWindowNumber as String] as? CGWindowID,
+                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t,
+                  ownerPID != myPID else { continue }
+
+            guard let frame = CGRect(dictionaryRepresentation: boundsDict),
+                  frame.width > 1, frame.height > 1 else { continue }
+
+            let layer = info[kCGWindowLayer as String] as? Int ?? 0
+            guard layer == 0 else { continue }
+
+            windowInfos.append(WindowInfo(
+                windowID: windowID,
+                frame: frame,
+                title: info[kCGWindowName as String] as? String ?? "",
+                ownerName: info[kCGWindowOwnerName as String] as? String ?? ""
+            ))
+        }
+    }
+
+    private func setupLayers() {
+        guard let layer = self.layer else { return }
+
+        overlayLayer.frame = bounds
+        overlayLayer.backgroundColor = NSColor.black.withAlphaComponent(0.3).cgColor
+        layer.addSublayer(overlayLayer)
+
+        highlightLayer.fillColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        highlightLayer.strokeColor = NSColor.controlAccentColor.cgColor
+        highlightLayer.lineWidth = 3
+        highlightLayer.isHidden = true
+        layer.addSublayer(highlightLayer)
+
+        titleLabel.fontSize = 13
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        titleLabel.foregroundColor = NSColor.white.cgColor
+        titleLabel.backgroundColor = NSColor.black.withAlphaComponent(0.7).cgColor
+        titleLabel.cornerRadius = 6
+        titleLabel.alignmentMode = .center
+        titleLabel.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        titleLabel.isHidden = true
+        layer.addSublayer(titleLabel)
+    }
+
+    override func layout() {
+        super.layout()
+        overlayLayer.frame = bounds
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    private func viewPointToCG(_ viewPoint: CGPoint) -> CGPoint {
+        let mainScreenHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        return CGPoint(
+            x: screen.frame.origin.x + viewPoint.x,
+            y: mainScreenHeight - (screen.frame.origin.y + viewPoint.y)
+        )
+    }
+
+    private func cgRectToView(_ cgRect: CGRect) -> CGRect {
+        let mainScreenHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let cocoaY = mainScreenHeight - cgRect.origin.y - cgRect.height
+        return CGRect(
+            x: cgRect.origin.x - screen.frame.origin.x,
+            y: cocoaY - screen.frame.origin.y,
+            width: cgRect.width,
+            height: cgRect.height
+        )
+    }
+
+    private func windowAtPoint(_ cgPoint: CGPoint) -> WindowInfo? {
+        windowInfos.first { $0.frame.contains(cgPoint) }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let cgPoint = viewPointToCG(viewPoint)
+
+        if let info = windowAtPoint(cgPoint) {
+            guard highlightedWindowID != info.windowID else { return }
+            highlightedWindowID = info.windowID
+            updateHighlight(info)
+        } else if highlightedWindowID != nil {
+            highlightedWindowID = nil
+            clearHighlight()
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let cgPoint = viewPointToCG(viewPoint)
+        if let info = windowAtPoint(cgPoint) {
+            onWindowSelected?(info.windowID)
+        }
+    }
+
+    private func updateHighlight(_ info: WindowInfo) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        let viewRect = cgRectToView(info.frame)
+
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        path.addRect(viewRect)
+        let mask = CAShapeLayer()
+        mask.path = path
+        mask.fillRule = .evenOdd
+        overlayLayer.mask = mask
+
+        highlightLayer.path = CGPath(rect: viewRect, transform: nil)
+        highlightLayer.isHidden = false
+
+        let text = info.title.isEmpty ? info.ownerName : "\(info.ownerName) — \(info.title)"
+        titleLabel.string = text
+        let labelWidth = min(CGFloat(text.count) * 8 + 24, max(viewRect.width, 120))
+        let labelHeight: CGFloat = 26
+        titleLabel.frame = CGRect(
+            x: viewRect.midX - labelWidth / 2,
+            y: viewRect.maxY + 8,
+            width: labelWidth,
+            height: labelHeight
+        )
+        titleLabel.isHidden = false
+
+        CATransaction.commit()
+    }
+
+    private func clearHighlight() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        overlayLayer.mask = nil
+        highlightLayer.isHidden = true
+        titleLabel.isHidden = true
+        CATransaction.commit()
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+// MARK: - Window Selection Window Controller
+
+class WindowSelectionWindowController {
+    private var panels: [NSPanel] = []
+    private var escapeMonitor: Any?
+    private var localEscapeMonitor: Any?
+
+    @MainActor
+    func showOverlay(onSelected: @escaping (CGWindowID) -> Void, onCancelled: @escaping () -> Void) {
+        closeOverlay()
+
+        escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                onCancelled()
+                self?.closeOverlay()
+            }
+        }
+        localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                onCancelled()
+                self?.closeOverlay()
+                return nil
+            }
+            return event
+        }
+
+        for screen in NSScreen.screens {
+            let panel = WindowSelectionPanel(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .screenSaver
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.ignoresMouseEvents = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.isReleasedWhenClosed = false
+            panel.acceptsMouseMovedEvents = true
+
+            let selectionView = WindowSelectionNSView(frame: screen.frame, screen: screen)
+            selectionView.onWindowSelected = { [weak self] windowID in
+                onSelected(windowID)
+                self?.closeOverlay()
+            }
+            selectionView.onCancelled = { [weak self] in
+                onCancelled()
+                self?.closeOverlay()
+            }
+
+            panel.contentView = selectionView
+            panel.makeKeyAndOrderFront(nil)
+            panel.makeFirstResponder(selectionView)
+            panels.append(panel)
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let first = panels.first {
+            first.makeKeyAndOrderFront(nil)
+            if let view = first.contentView as? WindowSelectionNSView {
+                first.makeFirstResponder(view)
+            }
+        }
+    }
+
+    func closeOverlay() {
+        if let monitor = escapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            escapeMonitor = nil
+        }
+        if let monitor = localEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEscapeMonitor = nil
+        }
+        for panel in panels { panel.close() }
+        panels.removeAll()
+    }
+}
+
+private class WindowSelectionPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool) {
+        var panelStyle = styleMask
+        panelStyle.insert(.nonactivatingPanel)
+        super.init(contentRect: contentRect, styleMask: panelStyle, backing: backing, defer: flag)
+        self.hidesOnDeactivate = false
+        self.becomesKeyOnlyIfNeeded = false
+    }
+}
+
 // MARK: - Recording Area Overlay (shown during area recording)
 
 struct RecordingAreaOverlayView: NSViewRepresentable {

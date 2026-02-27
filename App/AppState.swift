@@ -47,6 +47,7 @@ class AppState: ObservableObject {
     @Published var showSettingsPopover: Bool = false
 
     private let areaSelectionController = AreaSelectionWindowController()
+    private let windowSelectionController = WindowSelectionWindowController()
     private let recordingAreaOverlayController = RecordingAreaOverlayController()
     var keyboardShortcutManager: KeyboardShortcutManager?
 
@@ -232,6 +233,36 @@ class AppState: ObservableObject {
         case .area:
             pendingCaptureAction = .recording
             showAreaSelection()
+        }
+    }
+
+    private func showWindowSelection() {
+        windowSelectionController.showOverlay(
+            onSelected: { [weak self] windowID in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    await self.onWindowSelected(windowID)
+                }
+            },
+            onCancelled: { }
+        )
+    }
+
+    private func onWindowSelected(_ windowID: CGWindowID) async {
+        guard await ensureReadyForCapture() else { return }
+        await captureEngine.refreshAvailableContent()
+
+        // Brief delay to let the overlay disappear before capturing
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        if let scWindow = captureEngine.availableWindows.first(where: { $0.windowID == windowID }) {
+            if let image = await screenshotService.captureWindow(scWindow) {
+                copyImageToClipboard(image)
+            } else if let error = screenshotService.errorMessage {
+                showErrorNotification(error)
+            }
+        } else {
+            showErrorNotification("Could not capture the selected window")
         }
     }
 
@@ -438,16 +469,7 @@ class AppState: ObservableObject {
                 showErrorNotification(error)
             }
         case .window:
-            guard await ensureReadyForCapture() else { return }
-            if let window = captureEngine.availableWindows.first(where: { $0.isOnScreen && $0.owningApplication?.bundleIdentifier != Bundle.main.bundleIdentifier }) {
-                if let image = await screenshotService.captureWindow(window) {
-                    copyImageToClipboard(image)
-                } else if let error = screenshotService.errorMessage {
-                    showErrorNotification(error)
-                }
-            } else {
-                showErrorNotification("No window found to capture")
-            }
+            showWindowSelection()
         case .area:
             // Show area selection immediately - no need to wait for display refresh
             pendingCaptureAction = .screenshot
