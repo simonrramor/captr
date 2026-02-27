@@ -148,14 +148,20 @@ class AreaSelectionNSView: NSView {
 class AreaSelectionWindowController {
     private var windows: [OverlayWindow] = []
     private var escapeMonitor: Any?
+    private var localEscapeMonitor: Any?
 
     @MainActor
     func showOverlay(onSelected: @escaping (CGRect) -> Void, onCancelled: @escaping () -> Void) {
         closeOverlay()
 
-        // Install escape key monitor
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Escape
+        escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                onCancelled()
+                self?.closeOverlay()
+            }
+        }
+        localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
                 onCancelled()
                 self?.closeOverlay()
                 return nil
@@ -191,15 +197,12 @@ class AreaSelectionWindowController {
 
             window.contentView = selectionView
             window.makeKeyAndOrderFront(nil)
-            // Make the view accept first mouse immediately
             window.makeFirstResponder(selectionView)
             windows.append(window)
         }
 
-        // Ensure we become the active app so key events are received
         NSApp.activate(ignoringOtherApps: true)
 
-        // Make the first overlay window key after activation
         if let firstWindow = windows.first {
             firstWindow.makeKeyAndOrderFront(nil)
             if let view = firstWindow.contentView as? AreaSelectionNSView {
@@ -207,15 +210,17 @@ class AreaSelectionWindowController {
             }
         }
 
-        // Push crosshair cursor
         NSCursor.crosshair.push()
     }
 
     func closeOverlay() {
-        // Remove escape monitor
         if let monitor = escapeMonitor {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
+        }
+        if let monitor = localEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEscapeMonitor = nil
         }
 
         // Pop crosshair cursor
@@ -281,10 +286,12 @@ class RecordingOverlayNSView: NSView {
         context.setFillColor(NSColor.black.withAlphaComponent(0.4).cgColor)
         context.fill(bounds)
 
-        // Cut out the recording area (convert screen coords to view coords)
+        // Convert from CG coordinates (top-left origin) to view coordinates (bottom-left origin)
+        let mainScreenHeight = NSScreen.screens.first?.frame.height ?? screenFrame.height
+        let cocoaGlobalY = mainScreenHeight - recordingRect.origin.y - recordingRect.height
         let localRect = CGRect(
             x: recordingRect.origin.x - screenFrame.origin.x,
-            y: recordingRect.origin.y - screenFrame.origin.y,
+            y: cocoaGlobalY - screenFrame.origin.y,
             width: recordingRect.width,
             height: recordingRect.height
         )
@@ -345,11 +352,23 @@ class RecordingAreaOverlayController {
 
 // MARK: - Overlay Window
 
-class OverlayWindow: NSWindow {
+class OverlayWindow: NSPanel {
     private var cursorTrackingArea: NSTrackingArea?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool) {
+        var panelStyle = styleMask
+        panelStyle.insert(.nonactivatingPanel)
+        super.init(contentRect: contentRect, styleMask: panelStyle, backing: backing, defer: flag)
+        self.hidesOnDeactivate = false
+        self.becomesKeyOnlyIfNeeded = false
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        super.sendEvent(event)
+    }
 
     override func makeKeyAndOrderFront(_ sender: Any?) {
         super.makeKeyAndOrderFront(sender)

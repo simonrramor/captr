@@ -14,7 +14,7 @@ class MediaLibraryManager: ObservableObject {
     }
 
     static var recordingsDirectory: URL {
-        baseDirectory.appendingPathComponent("Recordings")
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
     }
 
     static var screenshotsDirectory: URL {

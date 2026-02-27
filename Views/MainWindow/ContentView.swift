@@ -49,11 +49,65 @@ struct ContentView: View {
 
     private var screenshotBar: some View {
         HStack(spacing: 12) {
+            // Camera / Video toggle
+            HStack(spacing: 2) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        appState.isVideoMode = false
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 11))
+                        Text("Photo")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(!appState.isVideoMode ? .white : .secondary)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(!appState.isVideoMode ? Color(nsColor: NSColor(white: 0.30, alpha: 1.0)) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        appState.isVideoMode = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 11))
+                        Text("Video")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(appState.isVideoMode ? .white : .secondary)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(appState.isVideoMode ? Color(nsColor: NSColor(white: 0.30, alpha: 1.0)) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Color(nsColor: NSColor(white: 0.16, alpha: 1.0)))
+            )
+
             // Mode picker
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 ForEach([CaptureMode.fullScreen, .window, .area], id: \.self) { mode in
                     Button {
-                        appState.screenshotMode = mode
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            appState.screenshotMode = mode
+                        }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: mode.iconName)
@@ -62,36 +116,86 @@ struct ContentView: View {
                                 .font(.system(size: 12))
                         }
                         .foregroundColor(appState.screenshotMode == mode ? .white : .secondary)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(appState.screenshotMode == mode ? Color(nsColor: NSColor(white: 0.30, alpha: 1.0)) : Color(nsColor: NSColor(white: 0.20, alpha: 1.0)))
-                            )
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(appState.screenshotMode == mode ? Color(nsColor: NSColor(white: 0.30, alpha: 1.0)) : .clear)
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Color(nsColor: NSColor(white: 0.16, alpha: 1.0)))
+            )
 
-            // Capture button
-            Button {
-                Task { await appState.captureScreenshot() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 11))
-                    Text("Capture")
-                        .font(.system(size: 12, weight: .semibold))
+            // Capture / Record button
+            if appState.isVideoMode {
+                if appState.captureEngine.state.isActive {
+                    Button {
+                        Task { await appState.stopRecording() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(.white)
+                                .frame(width: 10, height: 10)
+                            Text(formatDuration(appState.captureEngine.recordingDuration))
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.red)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        Task { await appState.startRecording(mode: appState.screenshotMode) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 10, height: 10)
+                            Text("Record")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(nsColor: NSColor(white: 0.25, alpha: 1.0)))
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .foregroundColor(.white)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.accentColor)
-                )
+            } else {
+                Button {
+                    Task { await appState.captureScreenshot() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 11))
+                        Text("Capture")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.accentColor)
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             // Settings gear
             Button {
@@ -125,6 +229,12 @@ struct ContentView: View {
             .frame(width: 12, height: 16)
             .padding(.leading, 4)
         }
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 

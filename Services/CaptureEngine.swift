@@ -52,6 +52,7 @@ class CaptureEngine: NSObject, ObservableObject {
             outputURL = url
 
             let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+            writer.shouldOptimizeForNetworkUse = true
 
             let videoSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
@@ -218,7 +219,7 @@ class CaptureEngine: NSObject, ObservableObject {
     }
 
     private func startDurationTimer() {
-        durationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self, let start = self.recordingStartDate else { return }
                 self.recordingDuration = Date().timeIntervalSince(start)

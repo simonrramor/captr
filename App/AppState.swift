@@ -18,12 +18,14 @@ class AppState: ObservableObject {
     var iosMirrorWindow = DeviceMirrorWindow()
     var androidMirrorWindow = DeviceMirrorWindow()
     private var deviceManagerCancellable: AnyCancellable?
+    private var captureEngineCancellable: AnyCancellable?
 
     @Published var selectedSidebarItem: SidebarItem = .home
     @Published var selectedMediaItem: MediaItem?
     @Published var pendingCaptureAction: CaptureType?
 
-    // Screenshot UI state
+    // Capture UI state
+    @Published var isVideoMode: Bool = false
     @Published var screenshotMode: CaptureMode = .area
     @Published var copyToClipboard: Bool = true
     @Published var screenshotTimerSeconds: Int = 0
@@ -92,8 +94,11 @@ class AppState: ObservableObject {
         deviceManager.startMonitoring()
         setupAndroidMirror()
 
-        // Forward deviceManager changes to trigger SwiftUI updates on this object
+        // Forward nested ObservableObject changes to trigger SwiftUI updates
         deviceManagerCancellable = deviceManager.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        captureEngineCancellable = captureEngine.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
     }
