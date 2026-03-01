@@ -190,24 +190,36 @@ class CaptureEngine: NSObject, ObservableObject {
     private func createStreamConfiguration() -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
 
-        if let display = configuration.selectedDisplay {
-            switch configuration.resolution {
-            case .native:
+        switch configuration.mode {
+        case .window:
+            if let window = configuration.selectedWindow {
+                config.width = Int(window.frame.width) * 2
+                config.height = Int(window.frame.height) * 2
+            }
+        case .area:
+            if let display = configuration.selectedDisplay ?? availableDisplays.first {
                 config.width = Int(display.width) * 2
                 config.height = Int(display.height) * 2
-            case .hd1080:
-                config.width = 1920
-                config.height = 1080
-            case .hd720:
-                config.width = 1280
-                config.height = 720
             }
-        }
-
-        if let area = configuration.selectedArea, configuration.mode == .area {
-            config.sourceRect = area
-            config.width = min(Int(area.width) * 2, config.width)
-            config.height = min(Int(area.height) * 2, config.height)
+            if let area = configuration.selectedArea {
+                config.sourceRect = area
+                config.width = min(Int(area.width) * 2, config.width)
+                config.height = min(Int(area.height) * 2, config.height)
+            }
+        case .fullScreen:
+            if let display = configuration.selectedDisplay ?? availableDisplays.first {
+                switch configuration.resolution {
+                case .native:
+                    config.width = Int(display.width) * 2
+                    config.height = Int(display.height) * 2
+                case .hd1080:
+                    config.width = 1920
+                    config.height = 1080
+                case .hd720:
+                    config.width = 1280
+                    config.height = 720
+                }
+            }
         }
 
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(configuration.frameRate))

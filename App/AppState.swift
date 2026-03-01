@@ -229,7 +229,8 @@ class AppState: ObservableObject {
         case .fullScreen:
             await performCountdownAndRecord()
         case .window:
-            await performCountdownAndRecord()
+            pendingCaptureAction = .recording
+            showWindowSelection()
         case .area:
             pendingCaptureAction = .recording
             showAreaSelection()
@@ -255,14 +256,35 @@ class AppState: ObservableObject {
         // Brief delay to let the overlay disappear before capturing
         try? await Task.sleep(nanoseconds: 50_000_000)
 
-        if let scWindow = captureEngine.availableWindows.first(where: { $0.windowID == windowID }) {
+        guard let scWindow = captureEngine.availableWindows.first(where: { $0.windowID == windowID }) else {
+            showErrorNotification("Could not capture the selected window")
+            pendingCaptureAction = nil
+            return
+        }
+
+        if let action = pendingCaptureAction {
+            pendingCaptureAction = nil
+
+            switch action {
+            case .recording:
+                configuration.mode = .window
+                configuration.selectedWindow = scWindow
+                await performCountdownAndRecord()
+            case .screenshot:
+                if let image = await screenshotService.captureWindow(scWindow) {
+                    copyImageToClipboard(image)
+                } else if let error = screenshotService.errorMessage {
+                    showErrorNotification(error)
+                }
+            case .textCapture:
+                break
+            }
+        } else {
             if let image = await screenshotService.captureWindow(scWindow) {
                 copyImageToClipboard(image)
             } else if let error = screenshotService.errorMessage {
                 showErrorNotification(error)
             }
-        } else {
-            showErrorNotification("Could not capture the selected window")
         }
     }
 
@@ -469,6 +491,7 @@ class AppState: ObservableObject {
                 showErrorNotification(error)
             }
         case .window:
+            pendingCaptureAction = .screenshot
             showWindowSelection()
         case .area:
             // Show area selection immediately - no need to wait for display refresh
