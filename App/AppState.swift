@@ -179,10 +179,7 @@ class AppState: ObservableObject {
         case .iOS:
             if iosDeviceMirror.isMirroring {
                 if let image = iosDeviceMirror.takeScreenshot() {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.writeObjects([image])
-                    showSaveNotification("Device screenshot copied to clipboard")
+                    copyImageToClipboard(image)
                 } else {
                     showErrorNotification("Failed to capture screenshot from iOS device")
                 }
@@ -196,10 +193,7 @@ class AppState: ObservableObject {
                 return
             }
             if mirror.isMirroring, let image = mirror.takeScreenshot() {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.writeObjects([image])
-                showSaveNotification("Device screenshot copied to clipboard")
+                copyImageToClipboard(image)
             } else {
                 showErrorNotification("Start mirroring first to take a screenshot")
             }
@@ -312,7 +306,7 @@ class AppState: ObservableObject {
 
             // Brief delay to let the overlay window fully disappear from the screen
             // before capturing, so it doesn't appear in the screenshot
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            try? await Task.sleep(nanoseconds: 150_000_000)
 
             switch action {
             case .recording:
@@ -401,10 +395,7 @@ class AppState: ObservableObject {
 
         let display = configuration.selectedDisplay ?? captureEngine.availableDisplays.first
         if let image = await screenshotService.captureArea(display: display, area: area) {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.writeObjects([image])
-            showSaveNotification("Screenshot copied to clipboard")
+            copyImageToClipboard(image)
         } else if let error = screenshotService.errorMessage {
             showErrorNotification(error)
         }
@@ -503,7 +494,18 @@ class AppState: ObservableObject {
     private func copyImageToClipboard(_ image: NSImage) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.writeObjects([image])
+
+        if let tiffData = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiffData),
+           let pngData = bitmap.representation(using: .png, properties: [:]) {
+            let item = NSPasteboardItem()
+            item.setData(pngData, forType: .png)
+            item.setData(tiffData, forType: .tiff)
+            pasteboard.writeObjects([item])
+        } else {
+            pasteboard.writeObjects([image])
+        }
+
         showSaveNotification("Screenshot copied to clipboard")
     }
 

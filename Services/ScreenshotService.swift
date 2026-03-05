@@ -64,8 +64,6 @@ class ScreenshotService: ObservableObject {
     }
 
     func captureArea(display: SCDisplay?, area: CGRect) async -> NSImage? {
-        // area is already in CG coordinates (top-left origin) from convertToScreenCoordinates
-        // Use CGWindowListCreateImage which handles coordinates natively
         guard let cgImage = CGWindowListCreateImage(
             area,
             .optionOnScreenOnly,
