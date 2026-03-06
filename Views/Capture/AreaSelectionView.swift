@@ -223,13 +223,15 @@ class AreaSelectionWindowController {
             localEscapeMonitor = nil
         }
 
-        // Pop crosshair cursor
         NSCursor.pop()
 
-        for window in windows {
+        let windowsToClose = windows
+        windows.removeAll()
+        for window in windowsToClose {
+            window.contentView = nil
+            window.orderOut(nil)
             window.close()
         }
-        windows.removeAll()
     }
 
     private func convertToScreenCoordinates(_ rect: CGRect, in screen: NSScreen) -> CGRect {
@@ -648,14 +650,9 @@ class OverlayWindow: NSPanel {
         self.becomesKeyOnlyIfNeeded = false
     }
 
-    override func sendEvent(_ event: NSEvent) {
-        super.sendEvent(event)
-    }
-
     override func makeKeyAndOrderFront(_ sender: Any?) {
         super.makeKeyAndOrderFront(sender)
         setupCursorTracking()
-        NSCursor.crosshair.set()
     }
 
     private func setupCursorTracking() {
@@ -667,7 +664,7 @@ class OverlayWindow: NSPanel {
 
         let area = NSTrackingArea(
             rect: view.bounds,
-            options: [.cursorUpdate, .activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+            options: [.cursorUpdate, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -679,13 +676,11 @@ class OverlayWindow: NSPanel {
         NSCursor.crosshair.set()
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        NSCursor.crosshair.set()
-        super.mouseMoved(with: event)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        NSCursor.crosshair.set()
-        super.mouseEntered(with: event)
+    override func close() {
+        if let view = contentView, let area = cursorTrackingArea {
+            view.removeTrackingArea(area)
+            cursorTrackingArea = nil
+        }
+        super.close()
     }
 }
