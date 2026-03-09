@@ -494,16 +494,13 @@ class AppState: ObservableObject {
     private func copyImageToClipboard(_ image: NSImage) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
+        pasteboard.writeObjects([image])
 
         if let tiffData = image.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
-            let item = NSPasteboardItem()
-            item.setData(pngData, forType: .png)
-            item.setData(tiffData, forType: .tiff)
-            pasteboard.writeObjects([item])
-        } else {
-            pasteboard.writeObjects([image])
+            pasteboard.addTypes([.png], owner: nil)
+            pasteboard.setData(pngData, forType: .png)
         }
 
         showSaveNotification("Screenshot copied to clipboard")

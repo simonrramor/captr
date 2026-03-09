@@ -223,12 +223,14 @@ class AreaSelectionWindowController {
             localEscapeMonitor = nil
         }
 
-        NSCursor.pop()
-
         let windowsToClose = windows
         windows.removeAll()
+
+        if !windowsToClose.isEmpty {
+            NSCursor.pop()
+        }
+
         for window in windowsToClose {
-            window.contentView = nil
             window.orderOut(nil)
             window.close()
         }
@@ -653,6 +655,7 @@ class OverlayWindow: NSPanel {
     override func makeKeyAndOrderFront(_ sender: Any?) {
         super.makeKeyAndOrderFront(sender)
         setupCursorTracking()
+        NSCursor.crosshair.set()
     }
 
     private func setupCursorTracking() {
