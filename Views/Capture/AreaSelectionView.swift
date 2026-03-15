@@ -18,12 +18,24 @@ class AreaSelectionNSView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         setupLayers()
+        setupCursorTracking()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         wantsLayer = true
         setupLayers()
+        setupCursorTracking()
+    }
+
+    private func setupCursorTracking() {
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
     }
 
     private func setupLayers() {
@@ -141,6 +153,25 @@ class AreaSelectionNSView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.crosshair.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.crosshair.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        NSCursor.crosshair.set()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            NSCursor.crosshair.set()
+        }
+    }
 }
 
 // MARK: - Area Selection Window Controller
@@ -149,6 +180,15 @@ class AreaSelectionWindowController {
     private var windows: [OverlayWindow] = []
     private var escapeMonitor: Any?
     private var localEscapeMonitor: Any?
+
+    deinit {
+        removeMonitors()
+        let wins = windows
+        windows.removeAll()
+        for window in wins {
+            window.orderOut(nil)
+        }
+    }
 
     @MainActor
     func showOverlay(onSelected: @escaping (CGRect) -> Void, onCancelled: @escaping () -> Void) {
@@ -209,11 +249,21 @@ class AreaSelectionWindowController {
                 firstWindow.makeFirstResponder(view)
             }
         }
-
-        NSCursor.crosshair.push()
     }
 
     func closeOverlay() {
+        removeMonitors()
+
+        let windowsToClose = windows
+        windows.removeAll()
+
+        for window in windowsToClose {
+            window.orderOut(nil)
+            window.close()
+        }
+    }
+
+    private func removeMonitors() {
         if let monitor = escapeMonitor {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
@@ -221,18 +271,6 @@ class AreaSelectionWindowController {
         if let monitor = localEscapeMonitor {
             NSEvent.removeMonitor(monitor)
             localEscapeMonitor = nil
-        }
-
-        let windowsToClose = windows
-        windows.removeAll()
-
-        if !windowsToClose.isEmpty {
-            NSCursor.pop()
-        }
-
-        for window in windowsToClose {
-            window.orderOut(nil)
-            window.close()
         }
     }
 
@@ -452,6 +490,15 @@ class WindowSelectionWindowController {
     private var escapeMonitor: Any?
     private var localEscapeMonitor: Any?
 
+    deinit {
+        removeMonitors()
+        let panelsToClose = panels
+        panels.removeAll()
+        for panel in panelsToClose {
+            panel.orderOut(nil)
+        }
+    }
+
     @MainActor
     func showOverlay(onSelected: @escaping (CGWindowID) -> Void, onCancelled: @escaping () -> Void) {
         closeOverlay()
@@ -513,6 +560,16 @@ class WindowSelectionWindowController {
     }
 
     func closeOverlay() {
+        removeMonitors()
+        let panelsToClose = panels
+        panels.removeAll()
+        for panel in panelsToClose {
+            panel.orderOut(nil)
+            panel.close()
+        }
+    }
+
+    private func removeMonitors() {
         if let monitor = escapeMonitor {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
@@ -521,8 +578,6 @@ class WindowSelectionWindowController {
             NSEvent.removeMonitor(monitor)
             localEscapeMonitor = nil
         }
-        for panel in panels { panel.close() }
-        panels.removeAll()
     }
 }
 
@@ -597,6 +652,14 @@ class RecordingOverlayNSView: NSView {
 class RecordingAreaOverlayController {
     private var windows: [NSWindow] = []
 
+    deinit {
+        let wins = windows
+        windows.removeAll()
+        for window in wins {
+            window.orderOut(nil)
+        }
+    }
+
     @MainActor
     func showOverlay(recordingRect: CGRect) {
         closeOverlay()
@@ -629,18 +692,18 @@ class RecordingAreaOverlayController {
     }
 
     func closeOverlay() {
-        for window in windows {
+        let windowsToClose = windows
+        windows.removeAll()
+        for window in windowsToClose {
+            window.orderOut(nil)
             window.close()
         }
-        windows.removeAll()
     }
 }
 
 // MARK: - Overlay Window
 
 class OverlayWindow: NSPanel {
-    private var cursorTrackingArea: NSTrackingArea?
-
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
@@ -650,40 +713,5 @@ class OverlayWindow: NSPanel {
         super.init(contentRect: contentRect, styleMask: panelStyle, backing: backing, defer: flag)
         self.hidesOnDeactivate = false
         self.becomesKeyOnlyIfNeeded = false
-    }
-
-    override func makeKeyAndOrderFront(_ sender: Any?) {
-        super.makeKeyAndOrderFront(sender)
-        setupCursorTracking()
-        NSCursor.crosshair.set()
-    }
-
-    private func setupCursorTracking() {
-        guard let view = contentView else { return }
-
-        if let existing = cursorTrackingArea {
-            view.removeTrackingArea(existing)
-        }
-
-        let area = NSTrackingArea(
-            rect: view.bounds,
-            options: [.cursorUpdate, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        view.addTrackingArea(area)
-        cursorTrackingArea = area
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.crosshair.set()
-    }
-
-    override func close() {
-        if let view = contentView, let area = cursorTrackingArea {
-            view.removeTrackingArea(area)
-            cursorTrackingArea = nil
-        }
-        super.close()
     }
 }

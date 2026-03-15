@@ -9,6 +9,8 @@ class ScreenshotService: ObservableObject {
     @Published var errorMessage: String?
 
     func captureFullScreen(display: SCDisplay?) async -> NSImage? {
+        errorMessage = nil
+
         guard let display = display else {
             errorMessage = "No display available"
             return nil
@@ -37,6 +39,8 @@ class ScreenshotService: ObservableObject {
     }
 
     func captureWindow(_ window: SCWindow) async -> NSImage? {
+        errorMessage = nil
+
         do {
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = SCStreamConfiguration()
@@ -64,6 +68,8 @@ class ScreenshotService: ObservableObject {
     }
 
     func captureArea(display: SCDisplay?, area: CGRect) async -> NSImage? {
+        errorMessage = nil
+
         guard let cgImage = CGWindowListCreateImage(
             area,
             .optionOnScreenOnly,
@@ -80,6 +86,7 @@ class ScreenshotService: ObservableObject {
     }
 
     func saveScreenshot(_ image: NSImage, annotated: Bool = false) -> URL? {
+        errorMessage = nil
         let dir = MediaLibraryManager.screenshotsDirectory
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

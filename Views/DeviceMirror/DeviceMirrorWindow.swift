@@ -267,9 +267,7 @@ class DeviceMirrorWindow {
             image = mirror.takeScreenshot()
         }
         if let image = image {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.writeObjects([image])
+            ClipboardService.copyImage(image)
             appState?.showSavedNotification("Screenshot copied to clipboard")
         }
     }

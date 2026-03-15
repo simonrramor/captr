@@ -11,6 +11,9 @@ class CaptureEngine: NSObject, ObservableObject {
     @Published var availableWindows: [SCWindow] = []
     @Published var errorMessage: String?
 
+    /// Called on the main actor when the stream stops unexpectedly.
+    var onStreamError: ((String) -> Void)?
+
     private var stream: SCStream?
     private var streamOutput: CaptureStreamOutput?
     private var durationTimer: Timer?
@@ -84,6 +87,18 @@ class CaptureEngine: NSObject, ObservableObject {
 
             let bufferWriter = BufferWriter(assetWriter: writer, videoInput: vInput, audioInput: aInput)
             let output = CaptureStreamOutput(bufferWriter: bufferWriter)
+            output.onStreamError = { [weak self] message in
+                Task { @MainActor [weak self] in
+                    guard let self = self, self.state.isActive else { return }
+                    self.stopDurationTimer()
+                    self.audioManager.stopMicrophoneCapture()
+                    self.stream = nil
+                    self.streamOutput = nil
+                    self.cleanup()
+                    self.errorMessage = "Recording stopped: \(message)"
+                    self.onStreamError?(self.errorMessage!)
+                }
+            }
 
             let captureStream = SCStream(filter: filter, configuration: streamConfig, delegate: output)
             try captureStream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .global(qos: .userInteractive))
@@ -115,6 +130,7 @@ class CaptureEngine: NSObject, ObservableObject {
     func stopRecording() async -> URL? {
         guard state.isActive else { return nil }
         state = .stopping
+        errorMessage = nil
 
         stopDurationTimer()
         audioManager.stopMicrophoneCapture()
@@ -135,6 +151,17 @@ class CaptureEngine: NSObject, ObservableObject {
 
         let url = outputURL
         cleanup()
+
+        if let url = url {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let size = (attrs?[.size] as? Int64) ?? 0
+            if size == 0 {
+                try? FileManager.default.removeItem(at: url)
+                errorMessage = "Recording produced an empty file"
+                return nil
+            }
+        }
+
         return url
     }
 
@@ -325,6 +352,7 @@ class BufferWriter: @unchecked Sendable {
 
 class CaptureStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let bufferWriter: BufferWriter
+    var onStreamError: (@Sendable (String) -> Void)?
 
     init(bufferWriter: BufferWriter) {
         self.bufferWriter = bufferWriter
@@ -346,7 +374,8 @@ class CaptureStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        print("Stream stopped with error: \(error.localizedDescription)")
+        let message = error.localizedDescription
+        onStreamError?(message)
     }
 }
 

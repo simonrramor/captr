@@ -16,6 +16,16 @@ settings:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
+schemes:
+  Captr:
+    build:
+      targets:
+        Captr: all
+        CaptrTests: [test]
+    test:
+      targets:
+        - CaptrTests
+
 targets:
   Captr:
     type: application
@@ -31,6 +41,7 @@ targets:
           - "project.yml"
           - "DerivedData"
           - "build"
+          - "CaptrTests"
     resources:
       - path: Resources/Assets.xcassets
       - path: Resources/ios_stream.py
@@ -50,3 +61,20 @@ targets:
         DEVELOPMENT_TEAM: PBU727Q3RR
     entitlements:
       path: Captr.entitlements
+
+  CaptrTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: CaptrTests
+    dependencies:
+      - target: Captr
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.captr.tests
+        PRODUCT_NAME: CaptrTests
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: PBU727Q3RR
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Captr.app/Contents/MacOS/Captr"
+        BUNDLE_LOADER: "$(TEST_HOST)"

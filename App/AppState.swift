@@ -45,6 +45,7 @@ class AppState: ObservableObject {
     @Published var notificationIsError: Bool = false
     @Published var isRecordingShortcut: Bool = false
     @Published var showSettingsPopover: Bool = false
+    private var notificationDismissTask: Task<Void, Never>?
 
     private let areaSelectionController = AreaSelectionWindowController()
     private let windowSelectionController = WindowSelectionWindowController()
@@ -95,7 +96,11 @@ class AppState: ObservableObject {
         deviceManager.startMonitoring()
         setupAndroidMirror()
 
-        // Forward nested ObservableObject changes to trigger SwiftUI updates
+        captureEngine.onStreamError = { [weak self] message in
+            self?.recordingAreaOverlayController.closeOverlay()
+            self?.showErrorNotification(message)
+        }
+
         deviceManagerCancellable = deviceManager.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -327,6 +332,12 @@ class AppState: ObservableObject {
 
     private func performCountdownAndRecord() async {
         await captureEngine.startRecording()
+        if captureEngine.state == .idle {
+            recordingAreaOverlayController.closeOverlay()
+            if let error = captureEngine.errorMessage {
+                showErrorNotification(error)
+            }
+        }
     }
 
     func stopRecording() async {
@@ -492,40 +503,29 @@ class AppState: ObservableObject {
     }
 
     private func copyImageToClipboard(_ image: NSImage) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([image])
-
-        if let tiffData = image.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmap.representation(using: .png, properties: [:]) {
-            pasteboard.addTypes([.png], owner: nil)
-            pasteboard.setData(pngData, forType: .png)
-        }
-
+        ClipboardService.copyImage(image)
         showSaveNotification("Screenshot copied to clipboard")
     }
 
     // MARK: - Notifications
 
     private func showSaveNotification(_ message: String) {
-        notificationMessage = message
-        notificationIsError = false
-        showNotification = true
-
-        Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            showNotification = false
-        }
+        showNotificationBanner(message: message, isError: false, duration: 3_000_000_000)
     }
 
     private func showErrorNotification(_ message: String) {
+        showNotificationBanner(message: message, isError: true, duration: 5_000_000_000)
+    }
+
+    private func showNotificationBanner(message: String, isError: Bool, duration: UInt64) {
+        notificationDismissTask?.cancel()
         notificationMessage = message
-        notificationIsError = true
+        notificationIsError = isError
         showNotification = true
 
-        Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        notificationDismissTask = Task {
+            try? await Task.sleep(nanoseconds: duration)
+            guard !Task.isCancelled else { return }
             showNotification = false
         }
     }
