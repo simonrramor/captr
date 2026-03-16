@@ -45,16 +45,13 @@ class TextCaptureService: ObservableObject {
                     return
                 }
 
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                guard let observations = request.results as? [VNRecognizedTextObservation],
+                      !observations.isEmpty else {
                     continuation.resume(returning: nil)
                     return
                 }
 
-                let recognizedStrings = observations.compactMap { observation in
-                    observation.topCandidates(1).first?.string
-                }
-
-                let result = recognizedStrings.joined(separator: "\n")
+                let result = Self.assembleText(from: observations)
                 continuation.resume(returning: result.isEmpty ? nil : result)
             }
 
@@ -69,6 +66,49 @@ class TextCaptureService: ObservableObject {
                 continuation.resume(returning: nil)
             }
         }
+    }
+
+    /// Groups recognized text observations into paragraphs based on vertical
+    /// spacing. Lines with normal line-height gaps are joined with a space;
+    /// lines with larger gaps get a paragraph break.
+    static func assembleText(from observations: [VNRecognizedTextObservation]) -> String {
+        struct Line {
+            let text: String
+            let minY: CGFloat  // bottom edge in normalized coords (0 = bottom of image)
+            let maxY: CGFloat  // top edge
+        }
+
+        let lines: [Line] = observations.compactMap { obs in
+            guard let text = obs.topCandidates(1).first?.string else { return nil }
+            let box = obs.boundingBox
+            return Line(text: text, minY: box.minY, maxY: box.maxY)
+        }
+
+        guard !lines.isEmpty else { return "" }
+
+        // Vision uses bottom-left origin; sort top-to-bottom (descending maxY)
+        let sorted = lines.sorted { $0.maxY > $1.maxY }
+
+        if sorted.count == 1 { return sorted[0].text }
+
+        // Compute median line height to adapt to any font size
+        let heights = sorted.map { $0.maxY - $0.minY }.sorted()
+        let medianHeight = heights[heights.count / 2]
+
+        // Paragraph break threshold: gap > 1.2x the median line height
+        let threshold = medianHeight * 1.2
+
+        var result = sorted[0].text
+        for i in 1..<sorted.count {
+            let gap = sorted[i - 1].minY - sorted[i].maxY
+            if gap > threshold {
+                result += "\n\n" + sorted[i].text
+            } else {
+                result += " " + sorted[i].text
+            }
+        }
+
+        return result
     }
 
     static func copyToClipboard(_ text: String) {
