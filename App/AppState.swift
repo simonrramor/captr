@@ -50,6 +50,7 @@ class AppState: ObservableObject {
     private let areaSelectionController = AreaSelectionWindowController()
     private let windowSelectionController = WindowSelectionWindowController()
     private let recordingAreaOverlayController = RecordingAreaOverlayController()
+    let annotationWindowController = AnnotationWindowController()
     var keyboardShortcutManager: KeyboardShortcutManager?
 
     func unregisterShortcutsTemporarily() {
@@ -372,7 +373,8 @@ class AppState: ObservableObject {
             guard await ensureReadyForCapture() else { return }
             await takeFullScreenScreenshot()
         case .window:
-            break
+            pendingCaptureAction = .screenshot
+            showWindowSelection()
         case .area:
             // Show area selection immediately - no need to wait for display refresh
             pendingCaptureAction = .screenshot
@@ -416,10 +418,12 @@ class AppState: ObservableObject {
         annotationImage = image
         annotationState = AnnotationState()
         showAnnotationEditor = true
+        annotationWindowController.openAnnotationWindow(image: image, appState: self)
     }
 
     func saveAnnotatedScreenshot(_ image: NSImage) async {
         showAnnotationEditor = false
+        annotationWindowController.closeWindow()
         if let _ = screenshotService.saveScreenshot(image, annotated: annotationState.items.isEmpty == false) {
             await mediaLibrary.addScreenshot(at: MediaLibraryManager.screenshotsDirectory)
             showSaveNotification("Screenshot saved")
@@ -429,6 +433,7 @@ class AppState: ObservableObject {
 
     func saveScreenshotWithoutAnnotation() async {
         showAnnotationEditor = false
+        annotationWindowController.closeWindow()
         if let image = annotationImage {
             if let _ = screenshotService.saveScreenshot(image, annotated: false) {
                 await mediaLibrary.addScreenshot(at: MediaLibraryManager.screenshotsDirectory)

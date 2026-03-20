@@ -17,24 +17,6 @@ struct ContentView: View {
                     .transition(.opacity)
             }
 
-            if appState.showAnnotationEditor, let image = appState.annotationImage {
-                AnnotationEditorView(
-                    image: image,
-                    annotationState: $appState.annotationState,
-                    onSave: { annotatedImage in
-                        Task { await appState.saveAnnotatedScreenshot(annotatedImage) }
-                    },
-                    onSaveOriginal: {
-                        Task { await appState.saveScreenshotWithoutAnnotation() }
-                    },
-                    onCancel: {
-                        appState.showAnnotationEditor = false
-                        appState.annotationImage = nil
-                    }
-                )
-                .transition(.move(edge: .bottom))
-            }
-
             if appState.showNotification {
                 VStack {
                     Spacer()

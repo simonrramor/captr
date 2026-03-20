@@ -58,6 +58,7 @@ struct KeyCombo: Codable, Equatable {
 
 enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     case fullScreenScreenshot = "Full Screen Screenshot"
+    case windowScreenshot = "Window Screenshot"
     case areaScreenshot = "Area Screenshot"
     case toggleRecording = "Toggle Recording"
     case textCapture = "Text Capture"
@@ -67,6 +68,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     var iconName: String {
         switch self {
         case .fullScreenScreenshot: return "camera.fill"
+        case .windowScreenshot: return "macwindow"
         case .areaScreenshot: return "rectangle.dashed"
         case .toggleRecording: return "record.circle"
         case .textCapture: return "text.viewfinder"
@@ -90,6 +92,10 @@ class ShortcutSettings: ObservableObject {
     static let defaults: [ShortcutAction: KeyCombo] = [
         .fullScreenScreenshot: KeyCombo(
             keyCode: 20,
+            modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue
+        ),
+        .windowScreenshot: KeyCombo(
+            keyCode: 19,
             modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue
         ),
         .areaScreenshot: KeyCombo(

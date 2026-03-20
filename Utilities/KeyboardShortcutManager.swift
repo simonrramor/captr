@@ -122,6 +122,10 @@ class KeyboardShortcutManager {
             Task { @MainActor in
                 await appState.takeFullScreenScreenshot()
             }
+        case .windowScreenshot:
+            Task { @MainActor in
+                await appState.takeScreenshot(mode: .window)
+            }
         case .areaScreenshot:
             Task { @MainActor in
                 await appState.takeScreenshot(mode: .area)

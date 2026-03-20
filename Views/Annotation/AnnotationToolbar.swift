@@ -184,9 +184,11 @@ struct AnnotationEditorView: View {
             )
 
             canvas
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear {
                     canvasView = canvas
                 }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
