@@ -6,6 +6,24 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.2</title>
+            <description><![CDATA[
+                <ul>
+                    <li>New: Translate to English — select any on-screen text (Cmd+Shift+E) to translate it instantly</li>
+                    <li>Translation results shown in a floating popup with optional copy</li>
+                    <li>Requires macOS 15 (Sequoia) or later</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 14 Apr 2026 21:00:00 +0000</pubDate>
+            <enclosure url="https://simonrramor.github.io/captr/Captr.dmg"
+                       sparkle:version="3"
+                       sparkle:shortVersionString="1.2"
+                       sparkle:edSignature="CpaZDOImgcthbaHyOUSG3oy+4jTWO4cZqx+rOGpgc9tBoVr0WFVRm/bYqiAlP8ZqU6z7OZWS3Y7B6e+ZR76bAQ=="
+                       length="4137519"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.1</title>
             <description><![CDATA[
                 <ul>
