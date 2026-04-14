@@ -62,6 +62,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     case areaScreenshot = "Area Screenshot"
     case toggleRecording = "Toggle Recording"
     case textCapture = "Text Capture"
+    case translateCapture = "Translate to English"
 
     var id: String { rawValue }
 
@@ -72,6 +73,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         case .areaScreenshot: return "rectangle.dashed"
         case .toggleRecording: return "record.circle"
         case .textCapture: return "text.viewfinder"
+        case .translateCapture: return "character.book.closed"
         }
     }
 }
@@ -110,6 +112,10 @@ class ShortcutSettings: ObservableObject {
             keyCode: 17,
             modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue
         ),
+        .translateCapture: KeyCombo(
+            keyCode: 14,
+            modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue
+        ),
     ]
 
     func binding(for action: ShortcutAction) -> KeyCombo {
@@ -118,6 +124,11 @@ class ShortcutSettings: ObservableObject {
 
     func setBinding(_ combo: KeyCombo, for action: ShortcutAction) {
         bindings[action] = combo
+    }
+
+    func conflictingAction(for combo: KeyCombo, excluding action: ShortcutAction) -> ShortcutAction? {
+        guard !combo.isEmpty else { return nil }
+        return bindings.first { $0.key != action && $0.value == combo }?.key
     }
 
     func resetToDefaults() {

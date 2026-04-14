@@ -2,7 +2,7 @@ name: Captr
 options:
   bundleIdPrefix: com.captr
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
 
@@ -14,7 +14,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
 
 schemes:
   Captr:
@@ -59,6 +59,7 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: PBU727Q3RR
+        SWIFT_OBJC_BRIDGING_HEADER: Captr-Bridging-Header.h
     entitlements:
       path: Captr.entitlements
 

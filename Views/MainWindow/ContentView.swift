@@ -302,6 +302,7 @@ struct ShortcutRow: View {
     @ObservedObject var shortcutSettings: ShortcutSettings
     @EnvironmentObject var appState: AppState
     @State private var isRecording = false
+    @State private var conflictMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -312,6 +313,11 @@ struct ShortcutRow: View {
                 combo: shortcutSettings.binding(for: action),
                 isRecording: $isRecording,
                 onRecord: { combo in
+                    if let existing = shortcutSettings.conflictingAction(for: combo, excluding: action) {
+                        shortcutSettings.setBinding(.empty, for: existing)
+                        conflictMessage = "Removed from \(existing.rawValue)"
+                        dismissConflictMessage()
+                    }
                     shortcutSettings.setBinding(combo, for: action)
                     appState.isRecordingShortcut = false
                     appState.reregisterShortcuts()
@@ -329,8 +335,23 @@ struct ShortcutRow: View {
                     appState.reregisterShortcuts()
                 }
             )
+
+            if let message = conflictMessage {
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
+                    .transition(.opacity)
+            }
         }
         .padding(.vertical, 2)
+        .animation(.easeInOut(duration: 0.2), value: conflictMessage)
+    }
+
+    private func dismissConflictMessage() {
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            await MainActor.run { conflictMessage = nil }
+        }
     }
 }
 

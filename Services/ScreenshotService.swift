@@ -22,6 +22,7 @@ class ScreenshotService: ObservableObject {
             config.width = Int(display.width) * 2
             config.height = Int(display.height) * 2
             config.showsCursor = true
+            config.capturesAudio = false
             config.pixelFormat = kCVPixelFormatType_32BGRA
 
             let image = try await SCScreenshotManager.captureImage(
@@ -45,6 +46,7 @@ class ScreenshotService: ObservableObject {
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = SCStreamConfiguration()
             config.showsCursor = false
+            config.capturesAudio = false
             config.pixelFormat = kCVPixelFormatType_32BGRA
             config.scalesToFit = false
 
@@ -70,12 +72,7 @@ class ScreenshotService: ObservableObject {
     func captureArea(display: SCDisplay?, area: CGRect) async -> NSImage? {
         errorMessage = nil
 
-        guard let cgImage = CGWindowListCreateImage(
-            area,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.bestResolution, .boundsIgnoreFraming]
-        ) else {
+        guard let cgImage = CaptureScreenRect(area) else {
             errorMessage = "Area screenshot failed"
             return nil
         }

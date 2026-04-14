@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import ScreenCaptureKit
 import Combine
+import NaturalLanguage
+import Translation
 
 @MainActor
 class AppState: ObservableObject {
@@ -51,6 +53,8 @@ class AppState: ObservableObject {
     private let windowSelectionController = WindowSelectionWindowController()
     private let recordingAreaOverlayController = RecordingAreaOverlayController()
     let annotationWindowController = AnnotationWindowController()
+    let translationPopupController = TranslationPopupController()
+    let translationService = TranslationService()
     var keyboardShortcutManager: KeyboardShortcutManager?
 
     func unregisterShortcutsTemporarily() {
@@ -278,6 +282,8 @@ class AppState: ObservableObject {
                 }
             case .textCapture:
                 break
+            case .translateCapture:
+                break
             }
         } else {
             if let image = await screenshotService.captureWindow(scWindow) {
@@ -323,6 +329,8 @@ class AppState: ObservableObject {
                 await takeAreaScreenshot(area: rect)
             case .textCapture:
                 await performTextCapture(area: rect)
+            case .translateCapture:
+                await performTranslateCapture(area: rect)
             }
         }
     }
@@ -457,6 +465,45 @@ class AppState: ObservableObject {
             showSaveNotification("Text copied to clipboard")
         } else {
             showErrorNotification(textCaptureService.errorMessage ?? "No text found in the selected area")
+        }
+    }
+
+    func startTranslateCapture() async {
+        guard await ensureReadyForCapture() else { return }
+        pendingCaptureAction = .translateCapture
+        showAreaSelection()
+    }
+
+    private func performTranslateCapture(area: CGRect) async {
+        guard let text = await textCaptureService.captureAndRecognizeArea(area) else {
+            showErrorNotification(textCaptureService.errorMessage ?? "No text found in the selected area")
+            return
+        }
+
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+
+        guard let detected = recognizer.dominantLanguage else {
+            showErrorNotification("Could not detect the language of the text")
+            return
+        }
+
+        let source = Locale.Language(identifier: detected.rawValue)
+        let target = Locale.Language(identifier: "en")
+
+        let availability = LanguageAvailability()
+        let status = await availability.status(from: source, to: target)
+
+        guard status != .unsupported else {
+            showErrorNotification("Translation from \(detected.rawValue) to English is not supported")
+            return
+        }
+
+        do {
+            let translated = try await translationService.translate(text, from: source, to: target)
+            translationPopupController.show(translatedText: translated)
+        } catch {
+            showErrorNotification("Translation failed: \(error.localizedDescription)")
         }
     }
 

@@ -7,6 +7,7 @@ class KeyboardShortcutManager {
     private weak var appState: AppState?
     private var hotKeyRefs: [EventHotKeyRef?] = []
     private var eventHandler: EventHandlerRef?
+    private var idToAction: [UInt32: ShortcutAction] = [:]
 
     private static var shared: KeyboardShortcutManager?
 
@@ -46,6 +47,7 @@ class KeyboardShortcutManager {
 
             if status == noErr {
                 hotKeyRefs.append(hotKeyRef)
+                idToAction[nextID] = action
             }
 
             nextID += 1
@@ -59,6 +61,7 @@ class KeyboardShortcutManager {
             }
         }
         hotKeyRefs.removeAll()
+        idToAction.removeAll()
 
         if let handler = eventHandler {
             RemoveEventHandler(handler)
@@ -104,10 +107,7 @@ class KeyboardShortcutManager {
         guard let appState = appState else { return }
         guard !appState.isRecordingShortcut else { return }
 
-        let actions = ShortcutAction.allCases
-        let index = Int(id) - 1
-        guard index >= 0, index < actions.count else { return }
-        let action = actions[index]
+        guard let action = idToAction[id] else { return }
 
         switch action {
         case .toggleRecording:
@@ -133,6 +133,10 @@ class KeyboardShortcutManager {
         case .textCapture:
             Task { @MainActor in
                 await appState.startTextCapture()
+            }
+        case .translateCapture:
+            Task { @MainActor in
+                await appState.startTranslateCapture()
             }
         }
     }

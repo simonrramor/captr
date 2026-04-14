@@ -10,7 +10,6 @@ class TextCaptureService: ObservableObject {
     func captureAndRecognizeArea(_ area: CGRect) async -> String? {
         errorMessage = nil
 
-        // Capture directly using CGWindowListCreateImage for reliable screen coordinates
         guard let cgImage = captureScreenArea(area) else {
             errorMessage = "Failed to capture the selected area"
             return nil
@@ -25,15 +24,7 @@ class TextCaptureService: ObservableObject {
     }
 
     private func captureScreenArea(_ area: CGRect) -> CGImage? {
-        // CGWindowListCreateImage uses Core Graphics coordinates (top-left origin)
-        // The area from our overlay is already in this coordinate system
-        let image = CGWindowListCreateImage(
-            area,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.bestResolution, .boundsIgnoreFraming]
-        )
-        return image
+        return CaptureScreenRect(area)
     }
 
     private func recognizeText(from cgImage: CGImage) async -> String? {

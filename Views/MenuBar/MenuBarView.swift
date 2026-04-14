@@ -132,6 +132,10 @@ struct MenuBarView: View {
             MenuBarButton(icon: "text.viewfinder", title: "Capture Text from Area") {
                 Task { await appState.startTextCapture() }
             }
+
+            MenuBarButton(icon: "character.book.closed", title: "Translate Text to English") {
+                Task { await appState.startTranslateCapture() }
+            }
         }
     }
 

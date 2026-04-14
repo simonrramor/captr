@@ -21,6 +21,7 @@ enum CaptureType: String, CaseIterable, Identifiable {
     case recording = "Recording"
     case screenshot = "Screenshot"
     case textCapture = "Text Capture"
+    case translateCapture = "Translate Capture"
 
     var id: String { rawValue }
 }
