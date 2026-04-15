@@ -16,76 +16,99 @@ struct TranslationPopupView: View {
     let onCopy: () -> Void
     let onDismiss: () -> Void
 
+    private let cornerRadius: CGFloat = 16
+    private let iconButtonSize: CGFloat = 36
+    private let iconButtonCornerRadius: CGFloat = 8
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "character.book.closed")
-                    .foregroundStyle(.secondary)
-                Text("Translation")
-                    .font(.headline)
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.title3)
-                        .padding(8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            Divider()
-
+        VStack(alignment: .leading, spacing: 24) {
+            header
             content
-
-            HStack {
-                Spacer()
-                if case .loaded = popupState.phase {
-                    Button(action: onCopy) {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
+            footer
         }
-        .padding(16)
-        .frame(width: 380, alignment: .leading)
-        .background(.regularMaterial)
+        .padding(24)
+        .frame(width: 460, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            Text("Translation")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            iconButton(systemName: "xmark", action: onDismiss)
+                .help("Close")
+        }
     }
 
     @ViewBuilder
     private var content: some View {
         switch popupState.phase {
         case .loading:
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ProgressView()
                     .controlSize(.small)
                 Text("Translating…")
-                    .font(.system(size: 14))
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
 
         case .loaded(let text):
             ScrollView {
                 Text(text)
-                    .font(.system(size: 14))
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxHeight: 300)
+            .frame(maxHeight: 320)
 
         case .failed(let message):
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+                    .font(.system(size: 18))
                 Text(message)
-                    .font(.system(size: 13))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(minHeight: 36)
+            .frame(minHeight: 60)
         }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        HStack {
+            Spacer()
+            if case .loaded = popupState.phase {
+                iconButton(systemName: "doc.on.doc", action: onCopy)
+                    .help("Copy")
+            }
+        }
+        .frame(minHeight: iconButtonSize)
+    }
+
+    private func iconButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: iconButtonSize, height: iconButtonSize)
+                .background(
+                    RoundedRectangle(cornerRadius: iconButtonCornerRadius, style: .continuous)
+                        .fill(Color(nsColor: .quaternaryLabelColor).opacity(0.5))
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
