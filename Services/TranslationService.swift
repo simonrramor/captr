@@ -3,76 +3,123 @@ import SwiftUI
 import Translation
 import AppKit
 
+/// Drives the Translation framework from a long-lived hidden NSPanel so that
+/// back-to-back translations of the same language pair reuse the underlying
+/// `TranslationSession` (set up once via `.translationTask`). When the pair
+/// changes we tear down the request stream, which lets SwiftUI swap the
+/// session cleanly on the next config change.
 @MainActor
 class TranslationService {
     private var panel: NSPanel?
+    private let coordinator = TranslationCoordinator()
+
+    /// Mounts the hidden panel ahead of time. Call this while the user is
+    /// performing the area selection so the SwiftUI hosting view is ready by
+    /// the time we actually need to translate.
+    func prewarm() {
+        ensurePanel()
+    }
 
     func translate(_ text: String, from source: Locale.Language, to target: Locale.Language) async throws -> String {
-        tearDown()
-
-        let state = TranslationState()
-        state.pendingText = text
-        state.config = .init(source: source, target: target)
-
-        let result: String = try await withCheckedThrowingContinuation { continuation in
-            state.pendingContinuation = continuation
-
-            let hostView = TranslationHostView(state: state)
-            let hosting = NSHostingController(rootView: AnyView(hostView))
-            hosting.view.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
-
-            let p = NSPanel(
-                contentRect: NSRect(x: -10000, y: -10000, width: 1, height: 1),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            p.isOpaque = false
-            p.backgroundColor = .clear
-            p.level = .floating
-            p.hasShadow = false
-            p.isReleasedWhenClosed = false
-            p.ignoresMouseEvents = true
-            p.collectionBehavior = [.canJoinAllSpaces, .stationary]
-            p.alphaValue = 0
-            p.contentView = hosting.view
-            p.orderFrontRegardless()
-            self.panel = p
-        }
-
-        tearDown()
-        return result
+        ensurePanel()
+        return try await coordinator.submit(text: text, source: source, target: target)
     }
 
-    private func tearDown() {
-        panel?.orderOut(nil)
-        panel?.close()
-        panel = nil
+    private func ensurePanel() {
+        guard panel == nil else { return }
+
+        let hostView = TranslationHostView(coordinator: coordinator)
+        let hosting = NSHostingController(rootView: AnyView(hostView))
+        hosting.view.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
+
+        let p = NSPanel(
+            contentRect: NSRect(x: -10000, y: -10000, width: 1, height: 1),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.level = .floating
+        p.hasShadow = false
+        p.isReleasedWhenClosed = false
+        p.ignoresMouseEvents = true
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        p.alphaValue = 0
+        p.contentView = hosting.view
+        p.orderFrontRegardless()
+        panel = p
     }
 }
+
+// MARK: - Coordinator
 
 @MainActor
-private class TranslationState: ObservableObject {
+private class TranslationCoordinator: ObservableObject {
+    struct Request {
+        let text: String
+        let continuation: CheckedContinuation<String, Error>
+    }
+
     @Published var config: TranslationSession.Configuration?
-    var pendingText: String?
-    var pendingContinuation: CheckedContinuation<String, Error>?
+    private(set) var stream: AsyncStream<Request>?
+    private var streamContinuation: AsyncStream<Request>.Continuation?
+
+    private var currentSourceID: String?
+    private var currentTargetID: String?
+
+    func submit(text: String, source: Locale.Language, target: Locale.Language) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            let request = Request(text: text, continuation: continuation)
+
+            let sourceID = source.maximalIdentifier
+            let targetID = target.maximalIdentifier
+
+            if sourceID == currentSourceID,
+               targetID == currentTargetID,
+               let cont = streamContinuation {
+                // Same language pair as last time: reuse the live session by
+                // enqueueing on the existing stream. The running translationTask
+                // action picks it up without any SwiftUI re-setup.
+                cont.yield(request)
+            } else {
+                // Different pair (or first call): end the old stream so the
+                // previous action exits, then rebuild the stream and bump the
+                // config to trigger a new session.
+                streamContinuation?.finish()
+
+                let (newStream, newContinuation) = AsyncStream<Request>.makeStream()
+                stream = newStream
+                streamContinuation = newContinuation
+                currentSourceID = sourceID
+                currentTargetID = targetID
+
+                // Buffer the request before flipping the config so the new
+                // action picks it up as soon as it starts.
+                newContinuation.yield(request)
+
+                config = .init(source: source, target: target)
+            }
+        }
+    }
 }
 
+// MARK: - Hidden hosting view
+
 private struct TranslationHostView: View {
-    @ObservedObject var state: TranslationState
+    @ObservedObject var coordinator: TranslationCoordinator
 
     var body: some View {
         Color.clear
-            .translationTask(state.config) { session in
-                guard let text = state.pendingText,
-                      let continuation = state.pendingContinuation else { return }
-                state.pendingText = nil
-                state.pendingContinuation = nil
-                do {
-                    let response = try await session.translate(text)
-                    continuation.resume(returning: response.targetText)
-                } catch {
-                    continuation.resume(throwing: error)
+            .translationTask(coordinator.config) { session in
+                guard let stream = coordinator.stream else { return }
+                for await request in stream {
+                    do {
+                        let response = try await session.translate(request.text)
+                        request.continuation.resume(returning: response.targetText)
+                    } catch {
+                        request.continuation.resume(throwing: error)
+                    }
                 }
             }
     }
