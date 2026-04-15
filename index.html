@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Captr - Simple Screen Capture</title>
+    <title>Captr - Screen Capture, Text Recognition & Translation</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <style>
         * {
@@ -17,10 +17,6 @@
             background: #fff;
             color: #000;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
         }
 
         .hero {
@@ -28,7 +24,7 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
-            padding: 24px;
+            padding: 80px 24px 48px;
         }
 
         h1 {
@@ -36,8 +32,16 @@
             font-weight: 700;
             letter-spacing: -2px;
             line-height: 1.1;
-            margin-bottom: 48px;
+            margin-bottom: 16px;
             color: #000;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: #666;
+            max-width: 480px;
+            line-height: 1.5;
+            margin-bottom: 48px;
         }
 
         .btn-download {
@@ -108,12 +112,122 @@
             border-radius: 22px;
             margin-bottom: 32px;
         }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 32px;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 48px 24px 80px;
+        }
+
+        .feature {
+            text-align: center;
+            padding: 32px 24px;
+            border-radius: 16px;
+            background: #f9f9f9;
+        }
+
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+
+        .feature h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .feature p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .divider {
+            width: 100%;
+            max-width: 960px;
+            margin: 0 auto;
+            border: none;
+            border-top: 1px solid #eee;
+        }
+
+        .shortcuts {
+            max-width: 560px;
+            margin: 0 auto;
+            padding: 48px 24px 80px;
+            text-align: center;
+        }
+
+        .shortcuts h2 {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            margin-bottom: 32px;
+        }
+
+        .shortcut-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            text-align: left;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f9f9f9;
+            border-radius: 10px;
+        }
+
+        .shortcut-item span {
+            font-size: 14px;
+            color: #333;
+        }
+
+        .shortcut-key {
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 13px;
+            color: #666;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 4px 10px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 32px 24px;
+            font-size: 13px;
+            color: #999;
+            border-top: 1px solid #eee;
+        }
+
+        footer a {
+            color: #666;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 600px) {
+            .buttons {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
     <section class="hero">
         <img src="icon.png" alt="Captr" class="app-icon">
-        <h1>Simple screen capture.</h1>
+        <h1>Capture anything.</h1>
+        <p class="subtitle">Screenshots, screen recording, text recognition, and instant translation — all from one lightweight Mac app.</p>
         <div class="buttons">
             <a href="Captr.dmg" download class="btn-download">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -130,7 +244,76 @@
                 GitHub
             </a>
         </div>
-        <p class="meta">macOS 14+ &middot; Apple Silicon &amp; Intel &middot; Free &amp; Open Source</p>
+        <p class="meta">macOS 15+ &middot; Apple Silicon &amp; Intel &middot; Free &amp; Open Source</p>
     </section>
+
+    <section class="features">
+        <div class="feature">
+            <div class="feature-icon">&#x1F4F7;</div>
+            <h3>Screenshots</h3>
+            <p>Full screen, window, or selected area. Annotate before saving with shapes, arrows, and text.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">&#x1F3AC;</div>
+            <h3>Screen Recording</h3>
+            <p>Record your full screen, a window, or a specific area with system audio and microphone.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">&#x1F524;</div>
+            <h3>Text Capture</h3>
+            <p>Select any area on screen and instantly copy the text. Powered by on-device OCR.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">&#x1F30D;</div>
+            <h3>Translate to English</h3>
+            <p>Select foreign text on screen and get an instant English translation. All on-device, no API keys needed.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">&#x1F4F1;</div>
+            <h3>Device Mirroring</h3>
+            <p>Mirror and capture iOS and Android device screens directly on your Mac.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">&#x26A1;</div>
+            <h3>Keyboard Shortcuts</h3>
+            <p>Fully customisable global shortcuts for every action. Capture without switching apps.</p>
+        </div>
+    </section>
+
+    <hr class="divider">
+
+    <section class="shortcuts">
+        <h2>Default shortcuts</h2>
+        <div class="shortcut-list">
+            <div class="shortcut-item">
+                <span>Area Screenshot</span>
+                <span class="shortcut-key">&#x21E7;&#x2318;4</span>
+            </div>
+            <div class="shortcut-item">
+                <span>Full Screen Screenshot</span>
+                <span class="shortcut-key">&#x21E7;&#x2318;3</span>
+            </div>
+            <div class="shortcut-item">
+                <span>Window Screenshot</span>
+                <span class="shortcut-key">&#x21E7;&#x2318;2</span>
+            </div>
+            <div class="shortcut-item">
+                <span>Toggle Recording</span>
+                <span class="shortcut-key">&#x21E7;&#x2318;5</span>
+            </div>
+            <div class="shortcut-item">
+                <span>Capture Text</span>
+                <span class="shortcut-key">&#x21E7;&#x2318;T</span>
+            </div>
+            <div class="shortcut-item">
+                <span>Translate to English</span>
+                <span class="shortcut-key">&#x21E7;&#x2318;E</span>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>Built by <a href="https://github.com/simonrramor">Simon Amor</a> &middot; <a href="https://github.com/simonrramor/captr">Source on GitHub</a></p>
+    </footer>
 </body>
 </html>
