@@ -1,0 +1,371 @@
+# Automated macOS release pipeline for Captr.
+#
+# Trigger: push a tag matching v*.*.* (e.g. `git tag -a v1.2.3 -m "…" && git push --tags`).
+# The tagged commit's Info.plist must already contain that version — the
+# workflow validates this and fails fast otherwise.
+#
+# What it does, in order:
+#   1. Generates Captr.xcodeproj via xcodegen
+#   2. Imports the Developer ID Application cert into a fresh keychain
+#   3. Archives + signs + exports Captr.app
+#   4. Notarizes and staples the .app via notarytool
+#   5. Packages Captr.dmg with hdiutil, signs + notarizes + staples the DMG
+#   6. Downloads Sparkle's sign_update and produces the EdDSA signature
+#   7. Prepends a new <item> to appcast.xml using the tag's annotation as notes
+#   8. Commits the refreshed appcast.xml + Captr.dmg back to main
+#   9. Creates a GitHub Release with the DMG attached
+#
+# -----------------------------------------------------------------------------
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#
+#   DEVELOPER_ID_CERT_P12_BASE64
+#     Base64 of your Developer ID Application .p12 export. To generate:
+#       1. Xcode → Settings → Accounts → Manage Certificates → right-click the
+#          "Developer ID Application" cert → Export… (set a password)
+#       2. On the resulting .p12 file:
+#          base64 -i DeveloperID.p12 | pbcopy
+#
+#   DEVELOPER_ID_CERT_PASSWORD
+#     The password you set during the .p12 export above.
+#
+#   NOTARY_API_KEY_P8_BASE64
+#     Base64 of an App Store Connect API key. To create:
+#       1. appstoreconnect.apple.com → Users and Access → Integrations → App Store Connect API
+#       2. (+) New Key, role "Developer"
+#       3. Download the AuthKey_XXXXXX.p8 file (can only download once)
+#       4. base64 -i AuthKey_XXXXXX.p8 | pbcopy
+#
+#   NOTARY_KEY_ID
+#     The 10-character Key ID shown next to that key in App Store Connect.
+#
+#   NOTARY_ISSUER_ID
+#     The UUID at the top of the Keys page in App Store Connect.
+#
+#   SPARKLE_PRIVATE_KEY
+#     The EdDSA private key that pairs with SUPublicEDKey in Info.plist.
+#     If Sparkle's generate_keys originally stored it in your login keychain:
+#       curl -sL https://github.com/sparkle-project/Sparkle/releases/download/2.6.0/Sparkle-2.6.0.tar.xz | tar -xJ
+#       ./bin/generate_keys -x /tmp/sparkle_priv
+#       cat /tmp/sparkle_priv | pbcopy
+#     Paste the single base64 line as the secret value.
+# -----------------------------------------------------------------------------
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    env:
+      SPARKLE_VERSION: "2.6.0"
+      TEAM_ID: "D89WR7924X"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Validate tag matches Info.plist version
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
+          PLIST_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Info.plist)
+          if [ "$TAG_VERSION" != "$PLIST_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME expects CFBundleShortVersionString=$TAG_VERSION, but Info.plist has $PLIST_VERSION. Bump Info.plist before tagging."
+            exit 1
+          fi
+          echo "PLIST_VERSION=$PLIST_VERSION" >> $GITHUB_ENV
+          echo "PLIST_BUILD=$PLIST_BUILD" >> $GITHUB_ENV
+          echo "Building $PLIST_VERSION (build $PLIST_BUILD)"
+
+      - name: Import Developer ID certificate
+        env:
+          CERT_B64: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+
+          echo "$CERT_B64" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          # Put the new keychain first in the search list so codesign finds it.
+          OLD_KEYCHAINS=$(security list-keychains -d user | sed 's/"//g' | xargs)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $OLD_KEYCHAINS
+          security set-key-partition-list -S "apple-tool:,apple:,codesign:" -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          rm -f "$CERT_PATH"
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project Captr.xcodeproj \
+            -scheme Captr \
+            -configuration Release \
+            -archivePath build/Captr.xcarchive \
+            -destination 'generic/platform=macOS' \
+            COMPILER_INDEX_STORE_ENABLE=NO
+
+      - name: Export signed .app
+        run: |
+          set -euo pipefail
+          cat > build/exportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>developer-id</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Developer ID Application</string>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath build/Captr.xcarchive \
+            -exportPath build/Export \
+            -exportOptionsPlist build/exportOptions.plist
+
+          # Sanity check
+          codesign --verify --deep --strict --verbose=2 build/Export/Captr.app
+
+      - name: Notarize and staple .app
+        env:
+          NOTARY_API_KEY_B64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          echo "$NOTARY_API_KEY_B64" | base64 --decode > "$KEY_PATH"
+
+          APP_PATH="build/Export/Captr.app"
+          ZIP_PATH="build/Captr-notarize.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          xcrun notarytool submit "$ZIP_PATH" \
+            --key "$KEY_PATH" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+
+          rm -f "$ZIP_PATH"
+
+      - name: Build DMG
+        run: |
+          set -euo pipefail
+          STAGING="$RUNNER_TEMP/dmg-staging"
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING"
+          cp -R build/Export/Captr.app "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+
+          # Remove any stale local DMG so hdiutil can write fresh
+          rm -f Captr.dmg
+          hdiutil create \
+            -volname "Captr" \
+            -srcfolder "$STAGING" \
+            -ov \
+            -format UDZO \
+            Captr.dmg
+
+      - name: Sign and notarize DMG
+        env:
+          NOTARY_API_KEY_B64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          codesign --sign "Developer ID Application" --timestamp Captr.dmg
+          codesign --verify --verbose Captr.dmg
+
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          echo "$NOTARY_API_KEY_B64" | base64 --decode > "$KEY_PATH"
+
+          xcrun notarytool submit Captr.dmg \
+            --key "$KEY_PATH" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+
+          xcrun stapler staple Captr.dmg
+          xcrun stapler validate Captr.dmg
+
+          rm -f "$KEY_PATH"
+
+      - name: Sign DMG with Sparkle EdDSA key
+        id: sparkle
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          curl -sfL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            | tar -xJ
+          chmod +x bin/sign_update
+
+          # sign_update outputs: sparkle:edSignature="…" length="…"
+          SIG_OUTPUT=$(./bin/sign_update -s "$SPARKLE_PRIVATE_KEY" Captr.dmg)
+          echo "sign_update output: $SIG_OUTPUT"
+
+          SIGNATURE=$(echo "$SIG_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          LENGTH=$(echo "$SIG_OUTPUT" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
+
+          if [ -z "$SIGNATURE" ] || [ -z "$LENGTH" ]; then
+            echo "::error::Failed to parse sign_update output"
+            exit 1
+          fi
+
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
+          echo "length=$LENGTH" >> $GITHUB_OUTPUT
+
+      - name: Update appcast.xml
+        env:
+          SIGNATURE: ${{ steps.sparkle.outputs.signature }}
+          LENGTH: ${{ steps.sparkle.outputs.length }}
+        run: |
+          set -euo pipefail
+          # Release notes come from the tag annotation (git tag -a … -m "…").
+          # Fallback to the short commit message if the tag is lightweight.
+          NOTES=$(git tag -l --format='%(contents:subject)%0a%(contents:body)' "$GITHUB_REF_NAME" | sed '/^-----BEGIN/,$d')
+          NOTES=$(echo "$NOTES" | sed '/^[[:space:]]*$/d')
+          if [ -z "$NOTES" ]; then
+            NOTES=$(git log -1 --pretty=%B "$GITHUB_SHA")
+          fi
+
+          PUBDATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
+
+          export VERSION="$PLIST_VERSION"
+          export BUILD="$PLIST_BUILD"
+          export SIGNATURE
+          export LENGTH
+          export PUBDATE
+          export NOTES
+
+          python3 <<'PY'
+          import os, re
+
+          version = os.environ["VERSION"]
+          build = os.environ["BUILD"]
+          signature = os.environ["SIGNATURE"]
+          length = os.environ["LENGTH"]
+          pubdate = os.environ["PUBDATE"]
+          notes = os.environ["NOTES"].strip()
+
+          # Format notes as a <ul> if every non-empty line starts with "- "
+          # (the convention used by previous releases); otherwise inline as <p>.
+          lines = [ln.strip() for ln in notes.splitlines() if ln.strip()]
+          if lines and all(ln.startswith(("- ", "* ")) for ln in lines):
+              items = "\n".join(f"                    <li>{ln[2:].strip()}</li>" for ln in lines)
+              notes_html = f"\n                <ul>\n{items}\n                </ul>\n            "
+          else:
+              notes_html = f"\n                <p>{notes}</p>\n            "
+
+          new_item = (
+              "        <item>\n"
+              f"            <title>Version {version}</title>\n"
+              f"            <description><![CDATA[{notes_html}]]></description>\n"
+              f"            <pubDate>{pubdate}</pubDate>\n"
+              f'            <enclosure url="https://simonrramor.github.io/captr/Captr.dmg"\n'
+              f'                       sparkle:version="{build}"\n'
+              f'                       sparkle:shortVersionString="{version}"\n'
+              f'                       sparkle:edSignature="{signature}"\n'
+              f'                       length="{length}"\n'
+              f'                       type="application/octet-stream"/>\n'
+              "            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>\n"
+              "        </item>\n"
+          )
+
+          with open("appcast.xml", "r", encoding="utf-8") as f:
+              xml = f.read()
+
+          # Insert just before the first existing <item>.
+          replaced, count = re.subn(
+              r"([ \t]*)<item>",
+              lambda m: new_item + m.group(0),
+              xml,
+              count=1,
+          )
+          if count == 0:
+              raise SystemExit("Could not find <item> anchor in appcast.xml")
+
+          with open("appcast.xml", "w", encoding="utf-8") as f:
+              f.write(replaced)
+          PY
+
+      - name: Commit refreshed appcast.xml and DMG to main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Move artifacts aside so we can swap to main without losing them.
+          mv Captr.dmg "$RUNNER_TEMP/Captr.dmg"
+          mv appcast.xml "$RUNNER_TEMP/appcast.xml"
+
+          git fetch origin main
+          git checkout main
+          git pull --rebase origin main
+
+          mv "$RUNNER_TEMP/Captr.dmg" Captr.dmg
+          mv "$RUNNER_TEMP/appcast.xml" appcast.xml
+
+          git add Captr.dmg appcast.xml
+          git commit -m "Release v${PLIST_VERSION} (build ${PLIST_BUILD})"
+
+          # Retry on transient network failures (matches repo's push policy).
+          for delay in 2 4 8 16; do
+            if git push origin main; then
+              break
+            fi
+            echo "Push failed, retrying in ${delay}s…"
+            sleep "$delay"
+          done
+
+      - name: Create GitHub Release
+        # No body: set — the action uses the tag annotation message by default,
+        # which is the same source we use for the appcast release notes.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Captr ${{ env.PLIST_VERSION }}
+          files: Captr.dmg
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

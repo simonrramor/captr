@@ -470,13 +470,22 @@ class AppState: ObservableObject {
 
     func startTranslateCapture() async {
         guard await ensureReadyForCapture() else { return }
+        // Mount the hidden translation panel while the user draws the
+        // selection rectangle so the SwiftUI setup cost is hidden behind
+        // their input.
+        translationService.prewarm()
         pendingCaptureAction = .translateCapture
         showAreaSelection()
     }
 
     private func performTranslateCapture(area: CGRect) async {
+        // Show the popup immediately with a loader — perceived latency drops
+        // to zero while OCR and translation run in the background. Anchor it
+        // to the selected area so it appears right next to the source text.
+        translationPopupController.showLoading(anchor: area)
+
         guard let text = await textCaptureService.captureAndRecognizeArea(area) else {
-            showErrorNotification(textCaptureService.errorMessage ?? "No text found in the selected area")
+            translationPopupController.showError(textCaptureService.errorMessage ?? "No text found in the selected area")
             return
         }
 
@@ -484,26 +493,18 @@ class AppState: ObservableObject {
         recognizer.processString(text)
 
         guard let detected = recognizer.dominantLanguage else {
-            showErrorNotification("Could not detect the language of the text")
+            translationPopupController.showError("Could not detect the language of the text")
             return
         }
 
         let source = Locale.Language(identifier: detected.rawValue)
         let target = Locale.Language(identifier: "en")
 
-        let availability = LanguageAvailability()
-        let status = await availability.status(from: source, to: target)
-
-        guard status != .unsupported else {
-            showErrorNotification("Translation from \(detected.rawValue) to English is not supported")
-            return
-        }
-
         do {
             let translated = try await translationService.translate(text, from: source, to: target)
             translationPopupController.show(translatedText: translated)
         } catch {
-            showErrorNotification("Translation failed: \(error.localizedDescription)")
+            translationPopupController.showError("Translation failed: \(error.localizedDescription)")
         }
     }
 
