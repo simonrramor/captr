@@ -6,6 +6,23 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.2.2</title>
+            <description><![CDATA[
+                <ul>
+                    <li>Improved stability and permissions handling</li>
+                    <li>Notarized with Developer ID for Gatekeeper-free installs</li>
+                </ul>
+            ]]></description>
+            <pubDate>Tue, 15 Apr 2026 11:00:00 +0000</pubDate>
+            <enclosure url="https://simonrramor.github.io/captr/Captr.dmg"
+                       sparkle:version="5"
+                       sparkle:shortVersionString="1.2.2"
+                       sparkle:edSignature="3h+s2fxRkRZVwwOfUsOyj7NkY3W05G9rxCOW/O3XTWDMPQK8R/Nit85mqwlGIgdn7mKRFdh7ybQ1XS6ow+PABw=="
+                       length="2417835"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.2.1</title>
             <description><![CDATA[
                 <ul>
