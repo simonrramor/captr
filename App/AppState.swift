@@ -480,8 +480,9 @@ class AppState: ObservableObject {
 
     private func performTranslateCapture(area: CGRect) async {
         // Show the popup immediately with a loader — perceived latency drops
-        // to zero while OCR and translation run in the background.
-        translationPopupController.showLoading()
+        // to zero while OCR and translation run in the background. Anchor it
+        // to the selected area so it appears right next to the source text.
+        translationPopupController.showLoading(anchor: area)
 
         guard let text = await textCaptureService.captureAndRecognizeArea(area) else {
             translationPopupController.showError(textCaptureService.errorMessage ?? "No text found in the selected area")
