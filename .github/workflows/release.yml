@@ -343,16 +343,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Move artifacts aside so we can swap to main without losing them.
-          mv Captr.dmg "$RUNNER_TEMP/Captr.dmg"
-          mv appcast.xml "$RUNNER_TEMP/appcast.xml"
+          # Copy the freshly-built artifacts somewhere outside the repo before
+          # we move HEAD to main. The previous version did `mv` here, which
+          # left them as staged deletions in the working tree and prevented
+          # `git pull --rebase` from running ("cannot pull with rebase: You
+          # have unstaged changes"). Copy + reset is clean.
+          ARTIFACTS_DIR="$RUNNER_TEMP/release-artifacts"
+          mkdir -p "$ARTIFACTS_DIR"
+          cp Captr.dmg "$ARTIFACTS_DIR/"
+          cp appcast.xml "$ARTIFACTS_DIR/"
+
+          # Discard the build-time modifications to tracked files so the
+          # branch switch and rebase run cleanly. Untracked build artifacts
+          # (Captr.xcodeproj, build/, etc.) are harmless and left in place.
+          git reset --hard HEAD
 
           git fetch origin main
           git checkout main
           git pull --rebase origin main
 
-          mv "$RUNNER_TEMP/Captr.dmg" Captr.dmg
-          mv "$RUNNER_TEMP/appcast.xml" appcast.xml
+          cp "$ARTIFACTS_DIR/Captr.dmg" Captr.dmg
+          cp "$ARTIFACTS_DIR/appcast.xml" appcast.xml
 
           git add Captr.dmg appcast.xml
           git commit -m "Release v${PLIST_VERSION} (build ${PLIST_BUILD})"
