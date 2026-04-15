@@ -6,6 +6,21 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.2.3</title>
+            <description><![CDATA[
+                <p>Fix release workflow: copy artifacts before branch swap (#3)
+mv left Captr.dmg and appcast.xml as staged deletions, blocking git pull --rebase. Copy + git reset --hard HEAD instead, then swap to main and copy back. Unblocks the v1.2.3 release.</p>
+            ]]></description>
+            <pubDate>Wed, 15 Apr 2026 14:28:36 +0000</pubDate>
+            <enclosure url="https://simonrramor.github.io/captr/Captr.dmg"
+                       sparkle:version="6"
+                       sparkle:shortVersionString="1.2.3"
+                       sparkle:edSignature="F4+1G1Ok4FPCrjLN6VLzWzKd+pvjwJC0mBV7h20QCCBjCpqmqC3+MHbv2xFiRWbjjfidhS3IsUQb01xQo1gADg=="
+                       length="2175747"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.2.2</title>
             <description><![CDATA[
                 <ul>
