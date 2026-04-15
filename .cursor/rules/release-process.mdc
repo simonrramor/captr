@@ -1,0 +1,94 @@
+---
+description: Full release process when user says "push live", "push to live", "release", "deploy", or "update the site"
+alwaysApply: false
+---
+
+# Captr Release Process
+
+When the user asks to push live, follow ALL steps in order:
+
+## 1. Build
+
+```bash
+cd /Users/simonamor/captr
+xcodegen generate
+xcodebuild -project Captr.xcodeproj -scheme Captr -configuration Release \
+  -derivedDataPath ./build -clonedSourcePackagesDirPath ./build/SourcePackages \
+  clean build
+```
+
+## 2. Re-sign Sparkle framework and app with Developer ID
+
+```bash
+APP="build/Build/Products/Release/Captr.app"
+IDENTITY="Developer ID Application: Simon Amor (D89WR7924X)"
+codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc"
+codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"
+codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework"
+codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP"
+```
+
+## 3. Create DMG
+
+```bash
+rm -f Captr.dmg /tmp/captr_temp.dmg
+hdiutil create -volname "Captr" \
+  -srcfolder "build/Build/Products/Release/Captr.app" \
+  -ov -format UDZO /tmp/captr_temp.dmg
+mv /tmp/captr_temp.dmg Captr.dmg
+```
+
+## 4. Notarize and staple
+
+```bash
+xcrun notarytool submit Captr.dmg --keychain-profile "notary" --wait
+xcrun stapler staple Captr.dmg
+```
+
+## 5. Sign for Sparkle
+
+```bash
+./build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update Captr.dmg
+```
+
+Save the `sparkle:edSignature` and `length` from the output.
+
+## 6. Update appcast.xml
+
+- Add a new `<item>` at the top of the channel (keep old items for version history)
+- Use the version from `Info.plist` (`CFBundleShortVersionString` and `CFBundleVersion`)
+- Use the edSignature and length from step 5
+- Set `pubDate` to current UTC date
+
+## 7. Push to gh-pages
+
+```bash
+cp Captr.dmg /tmp/Captr_new.dmg
+cp appcast.xml /tmp/appcast_new.xml
+rm Captr.dmg
+git checkout gh-pages
+cp /tmp/Captr_new.dmg Captr.dmg
+cp /tmp/appcast_new.xml appcast.xml
+git add Captr.dmg appcast.xml
+git commit -m "Release vX.Y"
+git push origin gh-pages
+git checkout main
+rm -f /tmp/Captr_new.dmg /tmp/appcast_new.xml
+```
+
+## 8. Clear quarantine on local copy (optional)
+
+```bash
+xattr -cr build/Build/Products/Release/Captr.app
+```
+
+## Important
+
+- Always bump `CFBundleShortVersionString` and `CFBundleVersion` in Info.plist before building if code has changed since last release
+- The EdDSA signing key is stored in the macOS Keychain — do not regenerate it
+- Notarization credentials are stored in Keychain under profile "notary" (Apple ID: dogcultstudio@gmail.com, Team: D89WR7924X)
+- Developer ID certificate: "Developer ID Application: Simon Amor (D89WR7924X)"
+- Live site: https://simonrramor.github.io/captr/
+- Appcast URL: https://simonrramor.github.io/captr/appcast.xml
