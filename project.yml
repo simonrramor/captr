@@ -42,6 +42,7 @@ targets:
           - "DerivedData"
           - "build"
           - "CaptrTests"
+          - "*.dmg"
     resources:
       - path: Resources/Assets.xcassets
       - path: Resources/ios_stream.py
@@ -56,9 +57,11 @@ targets:
         ENABLE_HARDENED_RUNTIME: true
         COMBINE_HIDPI_IMAGES: true
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        CODE_SIGN_IDENTITY: "Apple Development"
-        CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: PBU727Q3RR
+        CODE_SIGN_IDENTITY: "Developer ID Application"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: D89WR7924X
+        OTHER_CODE_SIGN_FLAGS: "--timestamp --options runtime"
+        CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
         SWIFT_OBJC_BRIDGING_HEADER: Captr-Bridging-Header.h
     entitlements:
       path: Captr.entitlements
