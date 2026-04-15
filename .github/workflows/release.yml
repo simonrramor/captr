@@ -74,6 +74,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Select latest stable Xcode
@@ -269,10 +270,22 @@ jobs:
           LENGTH: ${{ steps.sparkle.outputs.length }}
         run: |
           set -euo pipefail
+
           # Release notes come from the tag annotation (git tag -a … -m "…").
-          # Fallback to the short commit message if the tag is lightweight.
-          NOTES=$(git tag -l --format='%(contents:subject)%0a%(contents:body)' "$GITHUB_REF_NAME" | sed '/^-----BEGIN/,$d')
-          NOTES=$(echo "$NOTES" | sed '/^[[:space:]]*$/d')
+          # The previous extraction using `%(contents:subject)%0a%(contents:body)`
+          # returned empty when the annotation had no blank-line separator
+          # between subject and body, so we fell back to the merge commit
+          # message. Read the tag object directly instead — everything after
+          # the first blank line is the annotation body, and we strip any
+          # trailing PGP signature.
+          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME" 2>/dev/null)" = "tag" ]; then
+            NOTES=$(git cat-file -p "refs/tags/$GITHUB_REF_NAME" \
+              | awk 'body; /^$/{body=1}' \
+              | sed '/^-----BEGIN/,$d')
+          else
+            NOTES=""
+          fi
+          NOTES=$(printf '%s' "$NOTES" | sed '/^[[:space:]]*$/d')
           if [ -z "$NOTES" ]; then
             NOTES=$(git log -1 --pretty=%B "$GITHUB_SHA")
           fi
@@ -305,12 +318,20 @@ jobs:
           else:
               notes_html = f"\n                <p>{notes}</p>\n            "
 
+          # Point at the GitHub Release asset rather than a single
+          # "latest Captr.dmg" on Pages: each version stays downloadable
+          # independently, and we don't have to publish the binary to
+          # gh-pages every release.
+          tag = os.environ["GITHUB_REF_NAME"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          dmg_url = f"https://github.com/{repo}/releases/download/{tag}/Captr.dmg"
+
           new_item = (
               "        <item>\n"
               f"            <title>Version {version}</title>\n"
               f"            <description><![CDATA[{notes_html}]]></description>\n"
               f"            <pubDate>{pubdate}</pubDate>\n"
-              f'            <enclosure url="https://simonrramor.github.io/captr/Captr.dmg"\n'
+              f'            <enclosure url="{dmg_url}"\n'
               f'                       sparkle:version="{build}"\n'
               f'                       sparkle:shortVersionString="{version}"\n'
               f'                       sparkle:edSignature="{signature}"\n'
@@ -371,6 +392,32 @@ jobs:
           # Retry on transient network failures (matches repo's push policy).
           for delay in 2 4 8 16; do
             if git push origin main; then
+              break
+            fi
+            echo "Push failed, retrying in ${delay}s…"
+            sleep "$delay"
+          done
+
+      - name: Publish appcast.xml to gh-pages
+        run: |
+          set -euo pipefail
+          # GitHub Pages for this repo serves from the gh-pages branch, not
+          # main. Sparkle reads https://simonrramor.github.io/captr/appcast.xml
+          # which is the copy on gh-pages — so the appcast commit to main
+          # isn't what users actually see. Mirror the file here.
+          ARTIFACTS_DIR="$RUNNER_TEMP/release-artifacts"
+
+          git fetch origin gh-pages
+          git checkout gh-pages
+          git pull --rebase origin gh-pages
+
+          cp "$ARTIFACTS_DIR/appcast.xml" appcast.xml
+
+          git add appcast.xml
+          git commit -m "Publish v${PLIST_VERSION} to appcast"
+
+          for delay in 2 4 8 16; do
+            if git push origin gh-pages; then
               break
             fi
             echo "Push failed, retrying in ${delay}s…"
