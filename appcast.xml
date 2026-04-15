@@ -6,6 +6,24 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.2.3</title>
+            <description><![CDATA[
+                <ul>
+                    <li>Instant translation popup with loader — opens the moment you release the mouse, no more blank wait</li>
+                    <li>Faster back-to-back translations: the translation session is now reused across selections of the same language</li>
+                    <li>Popup now appears next to the selected text instead of centered on the screen</li>
+                </ul>
+            ]]></description>
+            <pubDate>Wed, 15 Apr 2026 14:28:36 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.2.3/Captr.dmg"
+                       sparkle:version="6"
+                       sparkle:shortVersionString="1.2.3"
+                       sparkle:edSignature="F4+1G1Ok4FPCrjLN6VLzWzKd+pvjwJC0mBV7h20QCCBjCpqmqC3+MHbv2xFiRWbjjfidhS3IsUQb01xQo1gADg=="
+                       length="2175747"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.2.2</title>
             <description><![CDATA[
                 <ul>
