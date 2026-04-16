@@ -316,6 +316,13 @@ class AppState: ObservableObject {
         if let action = pendingCaptureAction {
             pendingCaptureAction = nil
 
+            // For translate, show the popup instantly — before the overlay-
+            // dismiss sleep. Only the OCR capture needs the overlay gone from
+            // the screen; the popup itself won't interfere.
+            if action == .translateCapture {
+                translationPopupController.showLoading(anchor: rect)
+            }
+
             // Brief delay to let the overlay window fully disappear from the screen
             // before capturing, so it doesn't appear in the screenshot
             try? await Task.sleep(nanoseconds: 150_000_000)
@@ -479,10 +486,9 @@ class AppState: ObservableObject {
     }
 
     private func performTranslateCapture(area: CGRect) async {
-        // Show the popup immediately with a loader — perceived latency drops
-        // to zero while OCR and translation run in the background. Anchor it
-        // to the selected area so it appears right next to the source text.
-        translationPopupController.showLoading(anchor: area)
+        // Popup is already showing — onAreaSelected opens it before the
+        // overlay-dismiss sleep so it appears the instant the user releases
+        // the mouse.
 
         guard let text = await textCaptureService.captureAndRecognizeArea(area) else {
             translationPopupController.showError(textCaptureService.errorMessage ?? "No text found in the selected area")
