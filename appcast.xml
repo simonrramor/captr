@@ -6,6 +6,24 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.2.6</title>
+            <description><![CDATA[
+                <ul>
+                    <li>Translation popup appears instantly on mouse release</li>
+                    <li>Popup redesigned to match the Morse style</li>
+                    <li>Bold typography, solid background, icon-only buttons</li>
+                </ul>
+            ]]></description>
+            <pubDate>Thu, 16 Apr 2026 09:44:30 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.2.6/Captr.dmg"
+                       sparkle:version="9"
+                       sparkle:shortVersionString="1.2.6"
+                       sparkle:edSignature="wkONjjOektHNZKKRR6E8OUbqsqS74Cw8qrG7phlfppjeKS3IeWCG4Ie2tyUplH79MhSm9neIoxI8N8m7FyCpCw=="
+                       length="2180193"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.2.5</title>
             <description><![CDATA[
                 <ul>
