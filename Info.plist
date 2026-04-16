@@ -33,7 +33,7 @@
     <key>NSScreenCaptureUsageDescription</key>
     <string>Captr needs screen capture permission to record your screen and take screenshots.</string>
     <key>NSCameraUsageDescription</key>
-    <string>Screenshot needs camera access to mirror and capture your connected iOS device screen.</string>
+    <string>Captr needs camera access to mirror and capture your connected iOS device screen.</string>
     <key>LSUIElement</key>
     <false/>
     <key>SUFeedURL</key>
