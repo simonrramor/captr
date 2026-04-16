@@ -6,6 +6,24 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.2.4</title>
+            <description><![CDATA[
+                <ul>
+                    <li>Translation popup redesigned to match the Morse style</li>
+                    <li>Bold typography, solid background, icon-only buttons</li>
+                    <li>Releases now trigger automatically when Info.plist is bumped</li>
+                </ul>
+            ]]></description>
+            <pubDate>Thu, 16 Apr 2026 08:54:51 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.2.4/Captr.dmg"
+                       sparkle:version="7"
+                       sparkle:shortVersionString="1.2.4"
+                       sparkle:edSignature="faI2IX/KnHjyG+b5tzMYxY68+xKKr/NLkn96k2n95+M56PJwEpWxLLn+TCIpTPBOrx/T0cDkuS9twlIF4W/XCg=="
+                       length="2179021"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.2.3</title>
             <description><![CDATA[
                 <p>Fix release workflow: copy artifacts before branch swap (#3)
