@@ -420,6 +420,16 @@ jobs:
             sleep "$delay"
           done
 
+      - name: Restore DMG for upload
+        if: env.SKIP_RELEASE == 'false'
+        run: |
+          # After the gh-pages step we're on a different branch. The
+          # working-directory Captr.dmg is NOT the one we built — it's
+          # whatever gh-pages (or the branch switch) left behind. Copy
+          # the actual artifact back so the release upload gets the right
+          # file with the matching Sparkle signature.
+          cp "$RUNNER_TEMP/release-artifacts/Captr.dmg" Captr.dmg
+
       - name: Create tag and GitHub Release
         if: env.SKIP_RELEASE == 'false'
         uses: softprops/action-gh-release@v2
