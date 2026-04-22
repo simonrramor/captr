@@ -13,6 +13,7 @@ class AppState: ObservableObject {
     @Published var mediaLibrary = MediaLibraryManager()
     @Published var permissionsManager = PermissionsManager()
     @Published var shortcutSettings = ShortcutSettings()
+    @Published var translationSettings = TranslationSettings()
 
     @Published var deviceManager = DeviceManager()
     @Published var iosDeviceMirror = IOSDeviceMirror()
@@ -53,8 +54,8 @@ class AppState: ObservableObject {
     private let windowSelectionController = WindowSelectionWindowController()
     private let recordingAreaOverlayController = RecordingAreaOverlayController()
     let annotationWindowController = AnnotationWindowController()
-    let translationPopupController = TranslationPopupController()
-    let translationService = TranslationService()
+    let translationOverlayController = TranslationOverlayController()
+    lazy var translationService = TranslationService(settings: translationSettings)
     var keyboardShortcutManager: KeyboardShortcutManager?
 
     func unregisterShortcutsTemporarily() {
@@ -316,13 +317,6 @@ class AppState: ObservableObject {
         if let action = pendingCaptureAction {
             pendingCaptureAction = nil
 
-            // For translate, show the popup instantly — before the overlay-
-            // dismiss sleep. Only the OCR capture needs the overlay gone from
-            // the screen; the popup itself won't interfere.
-            if action == .translateCapture {
-                translationPopupController.showLoading(anchor: rect)
-            }
-
             // Brief delay to let the overlay window fully disappear from the screen
             // before capturing, so it doesn't appear in the screenshot
             try? await Task.sleep(nanoseconds: 150_000_000)
@@ -486,31 +480,78 @@ class AppState: ObservableObject {
     }
 
     private func performTranslateCapture(area: CGRect) async {
-        // Popup is already showing — onAreaSelected opens it before the
-        // overlay-dismiss sleep so it appears the instant the user releases
-        // the mouse.
-
-        guard let text = await textCaptureService.captureAndRecognizeArea(area) else {
-            translationPopupController.showError(textCaptureService.errorMessage ?? "No text found in the selected area")
+        // Capture the screen area and run OCR first so we have an image to
+        // drop into the overlay immediately — perceived latency stays tiny
+        // while the translation step runs.
+        guard let (cgImage, observations) = await textCaptureService.captureObservations(area) else {
+            showErrorNotification(textCaptureService.errorMessage ?? "Failed to capture the selected area")
             return
         }
 
+        let initialImage = NSImage(cgImage: cgImage, size: area.size)
+        let engineName = translationService.currentEngineName
+        translationOverlayController.showLoading(area: area, initialImage: initialImage, engineName: engineName)
+
+        guard !observations.isEmpty else {
+            translationOverlayController.showFailed(message: "No text detected") { [weak self] in
+                Task { await self?.performTranslateCapture(area: area) }
+            }
+            return
+        }
+
+        var blocks = observations.compactMap {
+            VisionTextBlock(observation: $0, imageWidth: cgImage.width, imageHeight: cgImage.height)
+        }
+
+        for i in blocks.indices {
+            let sample = BackgroundColorSampler.sample(cgImage: cgImage, pixelRect: blocks[i].pixelRect)
+            blocks[i].backgroundColor = sample.color
+            blocks[i].isBackgroundDark = sample.isDark
+        }
+
+        // Detect source language from the concatenation of all segments so
+        // per-segment text (often short) doesn't foil the recognizer.
+        let joined = blocks.map(\.originalText).joined(separator: " ")
         let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
-
-        guard let detected = recognizer.dominantLanguage else {
-            translationPopupController.showError("Could not detect the language of the text")
-            return
-        }
-
-        let source = Locale.Language(identifier: detected.rawValue)
+        recognizer.processString(joined)
+        let source = Locale.Language(identifier: recognizer.dominantLanguage?.rawValue ?? "und")
         let target = Locale.Language(identifier: "en")
 
         do {
-            let translated = try await translationService.translate(text, from: source, to: target)
-            translationPopupController.show(translatedText: translated)
+            let translated = try await translationService.translateBatch(blocks.map(\.originalText), from: source, to: target)
+            for i in blocks.indices where i < translated.count {
+                blocks[i].translatedText = translated[i]
+            }
         } catch {
-            translationPopupController.showError("Translation failed: \(error.localizedDescription)")
+            translationOverlayController.showFailed(message: "Retry") { [weak self] in
+                Task { await self?.performTranslateCapture(area: area) }
+            }
+            return
+        }
+
+        let composited = TranslationCompositor.composite(
+            cgImage: cgImage,
+            blocks: blocks,
+            pointSize: area.size
+        )
+        translationOverlayController.showLoaded(composited: composited)
+        translationOverlayController.setCopyAction { [weak self] in
+            ClipboardService.copyImage(composited)
+            self?.showSaveNotification("Copied to clipboard")
+        }
+        translationOverlayController.setSaveAction { [weak self] in
+            Task { @MainActor in
+                await self?.saveTranslationOverlay(composited)
+            }
+        }
+    }
+
+    private func saveTranslationOverlay(_ image: NSImage) async {
+        if screenshotService.saveScreenshot(image, annotated: true) != nil {
+            await mediaLibrary.addScreenshot(at: MediaLibraryManager.screenshotsDirectory)
+            showSaveNotification("Translation saved")
+        } else if let error = screenshotService.errorMessage {
+            showErrorNotification(error)
         }
     }
 

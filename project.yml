@@ -42,6 +42,7 @@ targets:
           - "DerivedData"
           - "build"
           - "CaptrTests"
+          - "Scripts"
           - "*.dmg"
     resources:
       - path: Resources/Assets.xcassets
@@ -63,6 +64,9 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           CODE_SIGN_STYLE: Automatic
           DEVELOPMENT_TEAM: PBU727Q3RR
+          PRODUCT_BUNDLE_IDENTIFIER: com.captr.app.dev
+          PRODUCT_NAME: "Captr Dev"
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
         Release:
           CODE_SIGN_IDENTITY: "Developer ID Application"
           CODE_SIGN_STYLE: Manual
@@ -86,5 +90,9 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: PBU727Q3RR
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Captr.app/Contents/MacOS/Captr"
         BUNDLE_LOADER: "$(TEST_HOST)"
+      configs:
+        Debug:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Captr Dev.app/Contents/MacOS/Captr Dev"
+        Release:
+          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Captr.app/Contents/MacOS/Captr"

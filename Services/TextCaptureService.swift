@@ -15,19 +15,35 @@ class TextCaptureService: ObservableObject {
             return nil
         }
 
-        guard let text = await recognizeText(from: cgImage) else {
+        guard let observations = await recognizeObservations(from: cgImage) else {
             errorMessage = "No text found in the selected area"
             return nil
         }
 
-        return text
+        let text = Self.assembleText(from: observations)
+        return text.isEmpty ? nil : text
+    }
+
+    /// Captures the given screen area and returns the raw Vision observations
+    /// alongside the source CGImage. Used by the in-place translation
+    /// pipeline which needs per-segment bounding boxes, not assembled text.
+    func captureObservations(_ area: CGRect) async -> (CGImage, [VNRecognizedTextObservation])? {
+        errorMessage = nil
+
+        guard let cgImage = captureScreenArea(area) else {
+            errorMessage = "Failed to capture the selected area"
+            return nil
+        }
+
+        let observations = await recognizeObservations(from: cgImage) ?? []
+        return (cgImage, observations)
     }
 
     private func captureScreenArea(_ area: CGRect) -> CGImage? {
         return CaptureScreenRect(area)
     }
 
-    private func recognizeText(from cgImage: CGImage) async -> String? {
+    private func recognizeObservations(from cgImage: CGImage) async -> [VNRecognizedTextObservation]? {
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
@@ -42,8 +58,7 @@ class TextCaptureService: ObservableObject {
                     return
                 }
 
-                let result = Self.assembleText(from: observations)
-                continuation.resume(returning: result.isEmpty ? nil : result)
+                continuation.resume(returning: observations)
             }
 
             request.recognitionLevel = .accurate

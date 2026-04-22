@@ -289,11 +289,77 @@ struct SettingsPopup: View {
                         )
                     }
                 }
+
+                Section("Translation") {
+                    TranslationSettingsSection(settings: appState.translationSettings)
+                }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
         }
-        .frame(width: 380, height: 500)
+        .frame(width: 380, height: 560)
+    }
+}
+
+// MARK: - Translation Settings
+
+struct TranslationSettingsSection: View {
+    @ObservedObject var settings: TranslationSettings
+    @State private var apiKeyDraft: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker(selection: $settings.engine) {
+                ForEach(TranslationEngine.allCases) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            } label: {
+                Label("Engine", systemImage: "character.bubble")
+            }
+
+            Text(settings.engine.description)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if settings.engine == .claude {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Anthropic API Key", systemImage: "key.fill")
+                        .font(.system(size: 12))
+
+                    SecureField("sk-ant-...", text: $apiKeyDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { settings.setClaudeAPIKey(apiKeyDraft) }
+                        .onChange(of: apiKeyDraft) { _, new in
+                            settings.setClaudeAPIKey(new)
+                        }
+
+                    HStack(spacing: 4) {
+                        Image(systemName: settings.hasClaudeAPIKey ? "checkmark.circle.fill" : "exclamationmark.circle")
+                            .foregroundStyle(settings.hasClaudeAPIKey ? .green : .orange)
+                        Text(settings.hasClaudeAPIKey ? "Key saved to Keychain" : "Key required for Claude engine")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Link("Get a key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
+                            .font(.system(size: 11))
+                    }
+                }
+
+                Picker(selection: $settings.claudeModel) {
+                    ForEach(ClaudeModel.allCases) { model in
+                        Text("\(model.displayName) — \(model.costHint)").tag(model)
+                    }
+                } label: {
+                    Label("Model", systemImage: "cpu")
+                }
+            }
+        }
+        .onAppear {
+            apiKeyDraft = settings.claudeAPIKey ?? ""
+        }
     }
 }
 
