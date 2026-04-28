@@ -6,6 +6,21 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.3</title>
+            <description><![CDATA[
+                <p>- "Check for Updates…" menu item now shows a spinner and "Checking for updates…" while Sparkle is contacting the server, so it's clear something is happening when the appcast fetch is slow.
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com></p>
+            ]]></description>
+            <pubDate>Tue, 28 Apr 2026 13:45:07 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.3.3/Captr.dmg"
+                       sparkle:version="13"
+                       sparkle:shortVersionString="1.3.3"
+                       sparkle:edSignature="Ts7tF4rM03KaF92m3l0GTdRYF9MRUEJj/S1vw+wKe6FJY1S5uvw8tnx48eTFPWtgm72g9PoaJYXgqcATJvKIAg=="
+                       length="2312675"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.3.2</title>
             <description><![CDATA[
                 <p>- Area screenshot to clipboard and OCR/translation paths now use ScreenCaptureKit's SCScreenshotManager instead of the deprecated CGWindowListCreateImage. macOS 15 was nagging users to re-grant Screen Recording permission once a month for any app still on the legacy API; the modern API doesn't trigger the prompt.
