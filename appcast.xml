@@ -6,6 +6,23 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.2</title>
+            <description><![CDATA[
+                <p>- Area screenshot to clipboard and OCR/translation paths now use ScreenCaptureKit's SCScreenshotManager instead of the deprecated CGWindowListCreateImage. macOS 15 was nagging users to re-grant Screen Recording permission once a month for any app still on the legacy API; the modern API doesn't trigger the prompt.
+- Recording errors are no longer silent: when a recording produces an empty file (e.g. permission missing, no frames received, asset writer error) the menu bar now surfaces the actual reason instead of the overlay just disappearing.
+- Removed Utilities/CGWindowCapture.h/.m and the now-empty bridging header reference.
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com></p>
+            ]]></description>
+            <pubDate>Tue, 28 Apr 2026 13:36:11 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.3.2/Captr.dmg"
+                       sparkle:version="12"
+                       sparkle:shortVersionString="1.3.2"
+                       sparkle:edSignature="OsZl2HwAQquLbyFFDA8SbP4jBjBjtO/E1NzfSo2B2PTc1Bvow5nXVt5AejYJS0PSzIYZLZcjhldCI2tLB8TRAQ=="
+                       length="2306997"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.3.1</title>
             <description><![CDATA[
                 <p>- Re-cut v1.3.0 to push the appcast forward — auto-update users were stuck on v1.2.6 because the previous release didn't refresh appcast.xml
