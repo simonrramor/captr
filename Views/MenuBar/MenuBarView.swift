@@ -234,11 +234,20 @@ struct MenuBarView: View {
                 checkForUpdatesViewModel.checkForUpdates()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .frame(width: 16)
-                        .foregroundColor(.secondary)
-                    Text("Check for Updates…")
-                        .font(.system(size: 13))
+                    if checkForUpdatesViewModel.canCheckForUpdates {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .frame(width: 16)
+                            .foregroundColor(.secondary)
+                        Text("Check for Updates…")
+                            .font(.system(size: 13))
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 16)
+                        Text("Checking for updates…")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                 }
                 .contentShape(Rectangle())
