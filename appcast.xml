@@ -6,6 +6,25 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.1</title>
+            <description><![CDATA[
+                <p>- Re-cut v1.3.0 to push the appcast forward — auto-update users were stuck on v1.2.6 because the previous release didn't refresh appcast.xml
+- In-place translation overlay replaces the popup: translated text is composited onto the captured screenshot at the exact screen coordinates you dragged
+- Movable overlay with Save, Copy, and Close toolbar buttons; Cmd+S saves to the screenshots library, Cmd+C copies the composite, Esc dismisses
+- Claude API translation engine as an alternative to Apple's on-device translator (segments batched into one Messages API call for speed)
+- Settings → Translation panel for picking the engine and storing an Anthropic API key in the Keychain
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com></p>
+            ]]></description>
+            <pubDate>Tue, 28 Apr 2026 10:55:23 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.3.1/Captr.dmg"
+                       sparkle:version="11"
+                       sparkle:shortVersionString="1.3.1"
+                       sparkle:edSignature="6kZkvB3GkbXohMwj1R44AQWha4SDAk+AuUToMlZa1C+GFqCWDruur0otffZD18sIA/rk6pDhiJRZ2PSe97AcAA=="
+                       length="2299756"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.3.0</title>
             <description><![CDATA[
                 <p>- In-place translation overlay replaces the popup: translated text is composited onto the captured screenshot and shown at the exact screen coordinates you dragged, with original text masked behind a sampled background color
