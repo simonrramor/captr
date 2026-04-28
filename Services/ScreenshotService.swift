@@ -72,14 +72,53 @@ class ScreenshotService: ObservableObject {
     func captureArea(display: SCDisplay?, area: CGRect) async -> NSImage? {
         errorMessage = nil
 
-        guard let cgImage = CaptureScreenRect(area) else {
-            errorMessage = "Area screenshot failed"
+        do {
+            let cgImage = try await Self.captureAreaCGImage(display: display, area: area)
+            let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: area.width, height: area.height))
+            lastScreenshot = nsImage
+            return nsImage
+        } catch {
+            errorMessage = "Area screenshot failed: \(error.localizedDescription)"
             return nil
         }
+    }
 
-        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: area.width, height: area.height))
-        lastScreenshot = nsImage
-        return nsImage
+    /// Captures an area of the screen using ScreenCaptureKit. Used by both the
+    /// area-screenshot path and the OCR/translation pipeline so neither has to
+    /// touch the deprecated CGWindowListCreateImage (which triggers monthly
+    /// permission re-prompts on macOS 15+).
+    static func captureAreaCGImage(display: SCDisplay?, area: CGRect) async throws -> CGImage {
+        guard let display = display else {
+            throw NSError(domain: "ScreenshotService", code: 1, userInfo: [NSLocalizedDescriptionKey: "No display available"])
+        }
+
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let config = SCStreamConfiguration()
+        config.width = Int(display.width) * 2
+        config.height = Int(display.height) * 2
+        config.showsCursor = false
+        config.capturesAudio = false
+        config.pixelFormat = kCVPixelFormatType_32BGRA
+
+        let fullImage = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: config
+        )
+
+        let displayOrigin = CGDisplayBounds(display.displayID).origin
+        let scale = CGFloat(fullImage.width) / CGFloat(display.width)
+        let cropRect = CGRect(
+            x: (area.origin.x - displayOrigin.x) * scale,
+            y: (area.origin.y - displayOrigin.y) * scale,
+            width: area.width * scale,
+            height: area.height * scale
+        )
+
+        guard let cropped = fullImage.cropping(to: cropRect) else {
+            throw NSError(domain: "ScreenshotService", code: 2, userInfo: [NSLocalizedDescriptionKey: "crop out of bounds"])
+        }
+
+        return cropped
     }
 
     func saveScreenshot(_ image: NSImage, annotated: Bool = false) -> URL? {

@@ -144,8 +144,12 @@ class CaptureEngine: NSObject, ObservableObject {
         }
         stream = nil
 
+        var writerError: Error?
+        var receivedFrames = true
         if let output = streamOutput {
             await output.bufferWriter.finishWriting()
+            writerError = output.bufferWriter.writerError
+            receivedFrames = output.bufferWriter.didReceiveFrames
         }
         streamOutput = nil
 
@@ -157,7 +161,13 @@ class CaptureEngine: NSObject, ObservableObject {
             let size = (attrs?[.size] as? Int64) ?? 0
             if size == 0 {
                 try? FileManager.default.removeItem(at: url)
-                errorMessage = "Recording produced an empty file"
+                if let writerError {
+                    errorMessage = "Recording failed: \(writerError.localizedDescription)"
+                } else if !receivedFrames {
+                    errorMessage = "Recording produced no frames. Check Screen Recording permission in System Settings → Privacy & Security."
+                } else {
+                    errorMessage = "Recording produced an empty file"
+                }
                 return nil
             }
         }
@@ -289,6 +299,14 @@ class BufferWriter: @unchecked Sendable {
     private var startTime: CMTime?
     private var sessionStarted = false
     private var isFinished = false
+
+    var didReceiveFrames: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return sessionStarted
+    }
+
+    var writerError: Error? { assetWriter.error }
 
     init(assetWriter: AVAssetWriter, videoInput: AVAssetWriterInput, audioInput: AVAssetWriterInput?) {
         self.assetWriter = assetWriter

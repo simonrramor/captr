@@ -2,16 +2,16 @@ import Foundation
 import Vision
 import AppKit
 import CoreGraphics
+import ScreenCaptureKit
 
 @MainActor
 class TextCaptureService: ObservableObject {
     @Published var errorMessage: String?
 
-    func captureAndRecognizeArea(_ area: CGRect) async -> String? {
+    func captureAndRecognizeArea(display: SCDisplay?, area: CGRect) async -> String? {
         errorMessage = nil
 
-        guard let cgImage = captureScreenArea(area) else {
-            errorMessage = "Failed to capture the selected area"
+        guard let cgImage = await captureScreenArea(display: display, area: area) else {
             return nil
         }
 
@@ -27,11 +27,10 @@ class TextCaptureService: ObservableObject {
     /// Captures the given screen area and returns the raw Vision observations
     /// alongside the source CGImage. Used by the in-place translation
     /// pipeline which needs per-segment bounding boxes, not assembled text.
-    func captureObservations(_ area: CGRect) async -> (CGImage, [VNRecognizedTextObservation])? {
+    func captureObservations(display: SCDisplay?, area: CGRect) async -> (CGImage, [VNRecognizedTextObservation])? {
         errorMessage = nil
 
-        guard let cgImage = captureScreenArea(area) else {
-            errorMessage = "Failed to capture the selected area"
+        guard let cgImage = await captureScreenArea(display: display, area: area) else {
             return nil
         }
 
@@ -39,8 +38,13 @@ class TextCaptureService: ObservableObject {
         return (cgImage, observations)
     }
 
-    private func captureScreenArea(_ area: CGRect) -> CGImage? {
-        return CaptureScreenRect(area)
+    private func captureScreenArea(display: SCDisplay?, area: CGRect) async -> CGImage? {
+        do {
+            return try await ScreenshotService.captureAreaCGImage(display: display, area: area)
+        } catch {
+            errorMessage = "Failed to capture the selected area: \(error.localizedDescription)"
+            return nil
+        }
     }
 
     private func recognizeObservations(from cgImage: CGImage) async -> [VNRecognizedTextObservation]? {
