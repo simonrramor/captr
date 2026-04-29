@@ -6,6 +6,23 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.4</title>
+            <description><![CDATA[
+                <p>- Fix screen recording failing with "operation could not be completed" on macOS 26: ScreenCaptureKit attaches a stereoscopic-disparity tag to every frame that AVAssetWriter rejects when encoding plain H.264 — strip it before append. Pin source/output color to Rec.709/sRGB so they agree on extended-gamut displays.
+- Fix area recording on a non-primary monitor: pick the display containing the selected area, and translate the area to display-local coords before assigning to sourceRect.
+- Keep the area-selection overlay out of area screenshots: prime the SCRunningApplication for our own bundle and exclude it from the capture filter; force the overlay window to vanish before the capture pipeline reads back.
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com></p>
+            ]]></description>
+            <pubDate>Wed, 29 Apr 2026 10:38:03 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.3.4/Captr.dmg"
+                       sparkle:version="14"
+                       sparkle:shortVersionString="1.3.4"
+                       sparkle:edSignature="lqMd7/27fceF3mSr2mSK+SKuR77AMheD6URXQ6i2f9gxBBzy01Eh1l/Kb5ySJ6Z1sP7EkCTKKSQLZmZcveXoBA=="
+                       length="2321382"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.3.3</title>
             <description><![CDATA[
                 <p>- "Check for Updates…" menu item now shows a spinner and "Checking for updates…" while Sparkle is contacting the server, so it's clear something is happening when the appcast fetch is slow.
