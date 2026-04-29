@@ -6,6 +6,21 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.5</title>
+            <description><![CDATA[
+                <p>Fix screen recording producing zero-byte files on macOS 26: the previous fix tried to strip ScreenCaptureKit's stereoscopic-disparity attachment off each frame, but the tag lives on the upstream IOSurface and can't be removed via CVBuffer or IOSurface APIs. AVAssetWriter then rejected every frame with err -16122 ("operation could not be completed"). Maintain a pixel-buffer pool, deep-copy each frame into a clean buffer, and append the copy instead.
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com></p>
+            ]]></description>
+            <pubDate>Wed, 29 Apr 2026 12:43:01 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.3.5/Captr.dmg"
+                       sparkle:version="15"
+                       sparkle:shortVersionString="1.3.5"
+                       sparkle:edSignature="ykZL/mBKTEidyV3CiR6xBPKrGz54Q58sHgEX/TnBHq6M4I/iDsAuHqbXbT/yh6CkEGnkR0MUkinsHcJy4Y5ODA=="
+                       length="2327741"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.3.4</title>
             <description><![CDATA[
                 <p>- Fix screen recording failing with "operation could not be completed" on macOS 26: ScreenCaptureKit attaches a stereoscopic-disparity tag to every frame that AVAssetWriter rejects when encoding plain H.264 — strip it before append. Pin source/output color to Rec.709/sRGB so they agree on extended-gamut displays.
