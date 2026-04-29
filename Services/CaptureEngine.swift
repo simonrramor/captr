@@ -334,6 +334,17 @@ class BufferWriter: @unchecked Sendable {
     private var sessionStarted = false
     private var isFinished = false
 
+    // ScreenCaptureKit on macOS 26 attaches a stereoscopic-disparity tag
+    // to every frame's IOSurface, which AVAssetWriter rejects with
+    // err -16122 ("operation could not be completed") when encoding
+    // plain H.264. The attachment lives on the IOSurface itself and is
+    // not removable via CVBuffer*Attachment / IOSurfaceRemoveValue.
+    // Workaround: maintain a pool of clean pixel buffers, memcpy each
+    // frame into one, and append that instead.
+    private var pixelBufferPool: CVPixelBufferPool?
+    private var poolWidth = 0
+    private var poolHeight = 0
+
     var didReceiveFrames: Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -353,25 +364,87 @@ class BufferWriter: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard !isFinished, assetWriter.status != .failed else { return }
+        guard let srcPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        // Strip the stereoscopic-disparity attachment that ScreenCaptureKit
-        // puts on every frame on macOS 26 — AVAssetWriter rejects buffers
-        // carrying it when encoding plain H.264 (err -16122 / -11800
-        // "operation could not be completed").
-        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            CVBufferRemoveAttachment(pixelBuffer, "HorizontalDisparityAdjustment" as CFString)
+        let width = CVPixelBufferGetWidth(srcPixelBuffer)
+        let height = CVPixelBufferGetHeight(srcPixelBuffer)
+        guard width > 0, height > 0 else { return }
+
+        if pixelBufferPool == nil || poolWidth != width || poolHeight != height {
+            let pixelAttrs: [CFString: Any] = [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey: width,
+                kCVPixelBufferHeightKey: height,
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as [CFString: Any]
+            ]
+            let poolAttrs: [CFString: Any] = [kCVPixelBufferPoolMinimumBufferCountKey: 4]
+            var pool: CVPixelBufferPool?
+            guard CVPixelBufferPoolCreate(nil, poolAttrs as CFDictionary, pixelAttrs as CFDictionary, &pool) == kCVReturnSuccess, let pool else { return }
+            pixelBufferPool = pool
+            poolWidth = width
+            poolHeight = height
         }
+
+        var dstPixelBuffer: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool!, &dstPixelBuffer) == kCVReturnSuccess,
+              let dstPixelBuffer else { return }
+
+        if let cs = CGColorSpace(name: CGColorSpace.sRGB) {
+            CVBufferSetAttachment(dstPixelBuffer, kCVImageBufferCGColorSpaceKey, cs, .shouldPropagate)
+        }
+
+        CVPixelBufferLockBaseAddress(srcPixelBuffer, .readOnly)
+        CVPixelBufferLockBaseAddress(dstPixelBuffer, [])
+        if let srcBase = CVPixelBufferGetBaseAddress(srcPixelBuffer),
+           let dstBase = CVPixelBufferGetBaseAddress(dstPixelBuffer) {
+            let srcStride = CVPixelBufferGetBytesPerRow(srcPixelBuffer)
+            let dstStride = CVPixelBufferGetBytesPerRow(dstPixelBuffer)
+            if srcStride == dstStride {
+                memcpy(dstBase, srcBase, srcStride * height)
+            } else {
+                let copy = min(srcStride, dstStride)
+                for y in 0..<height {
+                    memcpy(dstBase.advanced(by: y * dstStride),
+                           srcBase.advanced(by: y * srcStride),
+                           copy)
+                }
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(dstPixelBuffer, [])
+        CVPixelBufferUnlockBaseAddress(srcPixelBuffer, .readOnly)
+
+        var formatDesc: CMVideoFormatDescription?
+        guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: dstPixelBuffer, formatDescriptionOut: &formatDesc) == noErr,
+              let formatDesc else { return }
+
+        var timing = CMSampleTimingInfo(
+            duration: CMSampleBufferGetDuration(sampleBuffer),
+            presentationTimeStamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
+            decodeTimeStamp: CMSampleBufferGetDecodeTimeStamp(sampleBuffer)
+        )
+
+        var newSampleBuffer: CMSampleBuffer?
+        guard CMSampleBufferCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: dstPixelBuffer,
+            dataReady: true,
+            makeDataReadyCallback: nil,
+            refcon: nil,
+            formatDescription: formatDesc,
+            sampleTiming: &timing,
+            sampleBufferOut: &newSampleBuffer
+        ) == noErr, let newSampleBuffer else { return }
 
         if !sessionStarted {
             assetWriter.startWriting()
-            let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            assetWriter.startSession(atSourceTime: timestamp)
-            startTime = timestamp
+            let pts = CMSampleBufferGetPresentationTimeStamp(newSampleBuffer)
+            assetWriter.startSession(atSourceTime: pts)
+            startTime = pts
             sessionStarted = true
         }
 
         guard videoInput.isReadyForMoreMediaData else { return }
-        videoInput.append(sampleBuffer)
+        videoInput.append(newSampleBuffer)
     }
 
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
