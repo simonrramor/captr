@@ -61,6 +61,11 @@ class CaptureEngine: NSObject, ObservableObject {
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: streamConfig.width,
                 AVVideoHeightKey: streamConfig.height,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                ],
                 AVVideoCompressionPropertiesKey: [
                     AVVideoAverageBitRateKey: 8_000_000,
                     AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
@@ -217,10 +222,23 @@ class CaptureEngine: NSObject, ObservableObject {
             return SCContentFilter(desktopIndependentWindow: window)
 
         case .area:
-            guard let display = configuration.selectedDisplay ?? availableDisplays.first else {
+            guard let area = configuration.selectedArea else {
+                throw CaptureError.noArea
+            }
+            guard let display = displayContaining(area) ?? configuration.selectedDisplay ?? availableDisplays.first else {
                 throw CaptureError.noDisplay
             }
             return SCContentFilter(display: display, excludingWindows: [])
+        }
+    }
+
+    /// Finds the display whose CG bounds contain (or intersect) the given
+    /// global-coordinate rect. Area selection delivers rects in global CG
+    /// space, so we have to look up the right display before building the
+    /// stream's content filter and source rect.
+    private func displayContaining(_ area: CGRect) -> SCDisplay? {
+        availableDisplays.first { display in
+            CGDisplayBounds(display.displayID).intersects(area)
         }
     }
 
@@ -234,14 +252,24 @@ class CaptureEngine: NSObject, ObservableObject {
                 config.height = Int(window.frame.height) * 2
             }
         case .area:
-            if let display = configuration.selectedDisplay ?? availableDisplays.first {
+            if let area = configuration.selectedArea,
+               let display = displayContaining(area) ?? configuration.selectedDisplay ?? availableDisplays.first {
+                let displayOrigin = CGDisplayBounds(display.displayID).origin
+                let localX = floor(area.origin.x - displayOrigin.x)
+                let localY = floor(area.origin.y - displayOrigin.y)
+                let localW = floor(area.width)
+                let localH = floor(area.height)
+                config.sourceRect = CGRect(x: localX, y: localY, width: localW, height: localH)
+                let scale = NSScreen.screens.first(where: {
+                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == display.displayID
+                })?.backingScaleFactor ?? 2.0
+                let pixW = Int(localW * scale)
+                let pixH = Int(localH * scale)
+                config.width = pixW - (pixW % 2)
+                config.height = pixH - (pixH % 2)
+            } else if let display = configuration.selectedDisplay ?? availableDisplays.first {
                 config.width = Int(display.width) * 2
                 config.height = Int(display.height) * 2
-            }
-            if let area = configuration.selectedArea {
-                config.sourceRect = area
-                config.width = min(Int(area.width) * 2, config.width)
-                config.height = min(Int(area.height) * 2, config.height)
             }
         case .fullScreen:
             if let display = configuration.selectedDisplay ?? availableDisplays.first {
@@ -263,6 +291,12 @@ class CaptureEngine: NSObject, ObservableObject {
         config.showsCursor = configuration.showCursor
         config.capturesAudio = configuration.captureSystemAudio
         config.pixelFormat = kCVPixelFormatType_32BGRA
+        // Pin the source buffers to Rec.709 / sRGB so they match the
+        // writer's declared color properties on extended-gamut displays.
+        config.colorSpaceName = CGColorSpace.sRGB
+        if #available(macOS 14.0, *) {
+            config.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
+        }
 
         return config
     }
@@ -319,6 +353,14 @@ class BufferWriter: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard !isFinished, assetWriter.status != .failed else { return }
+
+        // Strip the stereoscopic-disparity attachment that ScreenCaptureKit
+        // puts on every frame on macOS 26 — AVAssetWriter rejects buffers
+        // carrying it when encoding plain H.264 (err -16122 / -11800
+        // "operation could not be completed").
+        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            CVBufferRemoveAttachment(pixelBuffer, "HorizontalDisparityAdjustment" as CFString)
+        }
 
         if !sessionStarted {
             assetWriter.startWriting()

@@ -258,9 +258,17 @@ class AreaSelectionWindowController {
         windows.removeAll()
 
         for window in windowsToClose {
+            // alphaValue = 0 makes the window's contents disappear in the
+            // current compositor frame — orderOut alone is queued and can
+            // still be on-screen when SCScreenshotManager grabs the next
+            // frame for an area screenshot.
+            window.alphaValue = 0
             window.orderOut(nil)
             window.close()
         }
+        // Force WindowServer to commit the alpha/orderOut changes before
+        // the capture pipeline reads back the screen.
+        CATransaction.flush()
     }
 
     private func removeMonitors() {
