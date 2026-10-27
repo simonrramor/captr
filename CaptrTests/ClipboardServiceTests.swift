@@ -10,23 +10,19 @@ final class ClipboardServiceTests: XCTestCase {
 
     // MARK: - PNG conversion from CGImage-backed NSImage
 
-    func testCopyImage_CGImageBacked_writesPNGAndTIFF() {
+    func testCopyImage_CGImageBacked_writesOnlyPNG() throws {
         let image = makeTestImage(width: 100, height: 100)
 
         ClipboardService.copyImage(image)
 
         let pasteboard = NSPasteboard.general
-        let types = pasteboard.types ?? []
+        let item = try XCTUnwrap(pasteboard.pasteboardItems?.first)
 
-        XCTAssertTrue(types.contains(.png), "Pasteboard should contain PNG type")
-        XCTAssertTrue(types.contains(.tiff), "Pasteboard should contain TIFF type")
+        XCTAssertEqual(item.types, [.png], "Pasteboard item should advertise only PNG")
 
         let pngData = pasteboard.data(forType: .png)
         XCTAssertNotNil(pngData, "PNG data should be non-nil")
         XCTAssertTrue((pngData?.count ?? 0) > 0, "PNG data should be non-empty")
-
-        let tiffData = pasteboard.data(forType: .tiff)
-        XCTAssertNotNil(tiffData, "TIFF data should be non-nil")
     }
 
     // MARK: - Bitmap-backed NSImage
