@@ -6,6 +6,22 @@
         <description>Captr updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.4.20</title>
+            <description><![CDATA[
+                <ul>
+                    <li>Fix screenshot pasting in browsers and Electron apps by publishing only the PNG clipboard representation.</li>
+                </ul>
+            ]]></description>
+            <pubDate>Tue, 27 Oct 2026 14:23:49 +0000</pubDate>
+            <enclosure url="https://github.com/simonrramor/captr/releases/download/v1.4.20/Captr.dmg"
+                       sparkle:version="46"
+                       sparkle:shortVersionString="1.4.20"
+                       sparkle:edSignature="oA7jjxGbzJ62LP94l4zQR3J1xJr4Gox98HPnS8ZNk0YBJFZYzOd01q9yolX8L16D6fJfFts2cfxTCRpY2LZgDA=="
+                       length="2582238"
+                       type="application/octet-stream"/>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
             <title>Version 1.4.19</title>
             <description><![CDATA[
                 <ul>
